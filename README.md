@@ -1,8 +1,16 @@
 # Shepherd RM
 
+[![Documentation Status](https://readthedocs.org/projects/shepherdrm/badge/?version=latest)](https://shepherdrm.readthedocs.io/en/latest/?badge=latest)
+
 Shepherd RM is an open-source resource manager primarily focused on quality assurance. It lets human users and automated pipelines register, find, lease, renew, and release resources through a common API.
 
 The initial implementation is a Python modular monolith backed by PostgreSQL. A Python SDK and thin CLI will consume the same versioned REST/OpenAPI contract.
+
+## Documentation
+
+Project documentation is published on Read the Docs:
+
+- https://shepherdrm.readthedocs.io/en/latest/
 
 ## Repository layout
 

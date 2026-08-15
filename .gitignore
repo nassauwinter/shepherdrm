@@ -1,0 +1,22 @@
+.local-docs/
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+docs/_build/
+dist/
+build/
+
+# Local environments and configuration
+.venv/
+.env
+
+# Local tooling
+.DS_Store

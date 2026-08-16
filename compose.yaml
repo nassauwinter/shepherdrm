@@ -1,4 +1,28 @@
 services:
+  shepherd-rm:
+    build:
+      context: .
+    environment:
+      SHEPHERD_DATABASE_URL: postgresql://${POSTGRES_USER:-shepherd_rm}:${POSTGRES_PASSWORD:-shepherd_rm_local}@postgres:5432/${POSTGRES_DB:-shepherd_rm}
+      SHEPHERD_HOST: 0.0.0.0
+      SHEPHERD_PORT: 8000
+      SHEPHERD_LOG_LEVEL: ${SHEPHERD_LOG_LEVEL:-INFO}
+      SHEPHERD_OPENAPI_PATH: /app/openapi/openapi.yaml
+    ports:
+      - "${SHEPHERD_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/health')
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   postgres:
     image: postgres:17-alpine
     environment:

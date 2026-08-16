@@ -32,7 +32,39 @@ jobs:
       - name: Run tests
         env:
           UV_PYTHON: ${{ matrix.python-version }}
-        run: uv run --locked pytest
+        run: uv run --locked pytest -m "not integration"
+
+  integration:
+    name: PostgreSQL integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: shepherd_rm
+          POSTGRES_USER: shepherd_rm
+          POSTGRES_PASSWORD: shepherd_rm_local
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U shepherd_rm -d shepherd_rm"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.12.5"
+          enable-cache: true
+      - name: Install project
+        run: uv sync --locked
+      - name: Run PostgreSQL integration tests
+        env:
+          SHEPHERD_TEST_DATABASE_URL: postgresql://shepherd_rm:shepherd_rm_local@localhost:5432/shepherd_rm
+        run: uv run --locked pytest -m integration
 
   linters:
     name: Linters
@@ -53,6 +85,22 @@ jobs:
         run: uv run --locked ruff format --check .
       - name: Type check
         run: uv run --locked mypy
+
+  contract:
+    name: OpenAPI contract
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.12.5"
+          enable-cache: true
+      - name: Install project
+        run: uv sync --locked
+      - name: Validate contract
+        run: uv run --locked pytest tests/contract
 
   documentation:
     name: Documentation

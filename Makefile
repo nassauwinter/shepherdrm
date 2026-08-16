@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: install test lint format format-check typecheck docs check db-up db-down clean
+.PHONY: install test lint format format-check typecheck docs serve check db-up db-down clean
 
 install:
 	$(PYTHON) scripts/dev.py install
@@ -22,6 +22,9 @@ typecheck:
 
 docs:
 	$(PYTHON) scripts/dev.py docs
+
+serve:
+	$(PYTHON) scripts/dev.py serve
 
 check: lint format-check typecheck test docs
 

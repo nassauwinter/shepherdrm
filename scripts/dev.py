@@ -49,6 +49,10 @@ def docs() -> None:
     uv_run("sphinx-build", "-W", "--keep-going", "-b", "html", "docs", "docs/_build/html")
 
 
+def serve() -> None:
+    uv_run("uvicorn", "shepherd_rm.main:app", "--reload", "--host", "127.0.0.1", "--port", "8000")
+
+
 def check() -> None:
     for task in (lint, format_check, typecheck, test, docs):
         task()
@@ -83,6 +87,7 @@ TASKS: dict[str, Callable[[], None]] = {
     "format-check": format_check,
     "typecheck": typecheck,
     "docs": docs,
+    "serve": serve,
     "check": check,
     "db-up": db_up,
     "db-down": db_down,

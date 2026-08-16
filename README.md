@@ -23,6 +23,8 @@ sdk/              Python SDK package
 cli/              Command-line client package
 ```
 
+The authoritative HTTP contract is [openapi/openapi.yaml](openapi/openapi.yaml). API changes update the contract, server implementation, and relevant tests together.
+
 ## Local development
 
 Requirements:
@@ -42,10 +44,19 @@ The project task script provides convenient aliases:
 python3 scripts/dev.py install
 ```
 
-Start PostgreSQL:
+Start Shepherd RM and PostgreSQL:
+
+```bash
+docker compose up --build
+```
+
+The API is then available at `http://localhost:8000`, interactive documentation at `http://localhost:8000/docs`, and the authoritative contract at `http://localhost:8000/openapi.json`.
+
+For a faster development loop, start only PostgreSQL and run the API locally with reload enabled:
 
 ```bash
 docker compose up -d postgres
+python3 scripts/dev.py serve
 ```
 
 Run the initial checks:
@@ -54,7 +65,7 @@ Run the initial checks:
 python3 scripts/dev.py check
 ```
 
-Useful individual tasks include `test`, `lint`, `format`, `typecheck`, and `docs`. Run `python3 scripts/dev.py --help` to list all tasks. Equivalent Make targets are provided as an optional convenience on systems with Make installed.
+Useful individual tasks include `serve`, `test`, `lint`, `format`, `typecheck`, and `docs`. Run `python3 scripts/dev.py --help` to list all tasks. Equivalent Make targets are provided as an optional convenience on systems with Make installed.
 
 The Compose credentials are intended only for local development. Copy `.env.example` to `.env` to override them locally; `.env` is ignored by Git.
 
@@ -74,4 +85,4 @@ GitHub Actions uses the checked-in `uv.lock` to run tests on every supported Pyt
 
 ## Status
 
-The project is at the initial scaffolding stage. The next implementation slice will add service configuration, database migrations, health endpoints, and authentication.
+The executable service foundation provides health and PostgreSQL readiness endpoints. Database migrations, authentication, and resource management are not implemented yet.

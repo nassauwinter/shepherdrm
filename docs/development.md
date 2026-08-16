@@ -16,6 +16,14 @@ Run the complete local verification suite:
 python3 scripts/dev.py check
 ```
 
+Run the API locally with automatic reload:
+
+```bash
+python3 scripts/dev.py serve
+```
+
+The local API expects PostgreSQL at the URL configured by `SHEPHERD_DATABASE_URL`.
+
 ## Run PostgreSQL
 
 Start the development database:

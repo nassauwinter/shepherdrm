@@ -1,0 +1,106 @@
+openapi: 3.1.0
+info:
+  title: Shepherd RM API
+  summary: Resource leasing and management for people and automation
+  description: |
+    The public HTTP contract for Shepherd RM. Product endpoints are versioned
+    under `/v1`; operational health endpoints are intentionally unversioned.
+  version: 0.1.0
+  license:
+    name: Apache License 2.0
+    identifier: Apache-2.0
+servers:
+  - url: http://localhost:8000
+    description: Local development
+tags:
+  - name: Operations
+    description: Service health and readiness
+paths:
+  /health:
+    get:
+      tags: [Operations]
+      summary: Check service liveness
+      description: Reports whether the HTTP process is running.
+      operationId: getHealth
+      responses:
+        "200":
+          description: The service is alive.
+          headers:
+            x-correlation-id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /ready:
+    get:
+      tags: [Operations]
+      summary: Check service readiness
+      description: Reports whether the service can reach PostgreSQL and serve requests.
+      operationId: getReadiness
+      responses:
+        "200":
+          description: The service is ready.
+          headers:
+            x-correlation-id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+        "503":
+          description: The service is not ready.
+          headers:
+            x-correlation-id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+components:
+  headers:
+    CorrelationId:
+      description: Correlates the response with logs and traces.
+      schema:
+        type: string
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+          examples: [ok]
+    ReadinessResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ready
+          examples: [ready]
+    Problem:
+      type: object
+      description: Problem Details response compatible with RFC 9457.
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          default: about:blank
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 100
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        correlation_id:
+          type: string
+      additionalProperties: true

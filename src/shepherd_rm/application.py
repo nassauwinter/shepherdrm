@@ -109,7 +109,7 @@ def create_app(
             problem = Problem(
                 title="Service unavailable",
                 status=503,
-                detail="PostgreSQL is unavailable",
+                detail="PostgreSQL is unavailable or its schema is incompatible",
                 correlation_id=correlation_id,
             )
             return JSONResponse(

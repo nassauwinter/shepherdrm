@@ -13,6 +13,8 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src ./src
 COPY openapi ./openapi
+COPY alembic.ini ./
+COPY migrations ./migrations
 
 RUN uv sync --locked --no-editable \
     && useradd --create-home --uid 10001 shepherd

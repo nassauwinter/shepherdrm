@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     port: int = Field(default=8000, ge=1, le=65535)
     log_level: str = "INFO"
     openapi_path: Path = PROJECT_ROOT / "openapi" / "openapi.yaml"
+    migrations_path: Path = PROJECT_ROOT / "migrations"
 
 
 @lru_cache

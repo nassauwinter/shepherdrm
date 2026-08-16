@@ -6,7 +6,9 @@ Shepherd RM is in its initial development stage. The current executable foundati
 docker compose up --build
 ```
 
-This starts Shepherd RM and PostgreSQL. The available endpoints are:
+This starts PostgreSQL, applies the versioned database migrations, and then
+starts Shepherd RM. A migration failure prevents the API from starting against
+an incompatible schema. The available endpoints are:
 
 - `http://localhost:8000/health` for service liveness;
 - `http://localhost:8000/ready` for PostgreSQL readiness;

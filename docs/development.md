@@ -32,6 +32,16 @@ Start the development database:
 python3 scripts/dev.py db-up
 ```
 
+Apply the versioned database schema after PostgreSQL is ready:
+
+```bash
+python3 scripts/dev.py migrate
+```
+
+When database models change, create a reviewed migration with
+`uv run alembic revision --autogenerate -m "describe the change"`. Verify that
+the models and latest migration agree with `python3 scripts/dev.py migration-check`.
+
 Stop it when it is no longer needed:
 
 ```bash

@@ -60,7 +60,7 @@ async def test_readiness_returns_problem_when_database_is_unavailable() -> None:
         "type": "about:blank",
         "title": "Service unavailable",
         "status": 503,
-        "detail": "PostgreSQL is unavailable",
+        "detail": "PostgreSQL is unavailable or its schema is incompatible",
         "correlation_id": "failed-request",
     }
 

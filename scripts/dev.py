@@ -66,6 +66,14 @@ def db_down() -> None:
     run(("docker", "compose", "down"))
 
 
+def migrate() -> None:
+    uv_run("alembic", "upgrade", "head")
+
+
+def migration_check() -> None:
+    uv_run("alembic", "check")
+
+
 def clean() -> None:
     for relative_path in (
         ".pytest_cache",
@@ -91,6 +99,8 @@ TASKS: dict[str, Callable[[], None]] = {
     "check": check,
     "db-up": db_up,
     "db-down": db_down,
+    "migrate": migrate,
+    "migration-check": migration_check,
     "clean": clean,
 }
 

@@ -85,4 +85,6 @@ GitHub Actions uses the checked-in `uv.lock` to run tests on every supported Pyt
 
 ## Status
 
-The executable service foundation provides health and PostgreSQL readiness endpoints. Database migrations, authentication, and resource management are not implemented yet.
+The executable service foundation provides health and migration-aware PostgreSQL
+readiness endpoints. Versioned database migrations are implemented;
+authentication and resource management are not implemented yet.

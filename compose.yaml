@@ -1,4 +1,15 @@
 services:
+  migrate:
+    build:
+      context: .
+    command: alembic upgrade head
+    environment:
+      SHEPHERD_DATABASE_URL: postgresql://${POSTGRES_USER:-shepherd_rm}:${POSTGRES_PASSWORD:-shepherd_rm_local}@postgres:5432/${POSTGRES_DB:-shepherd_rm}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   shepherd-rm:
     build:
       context: .
@@ -8,11 +19,12 @@ services:
       SHEPHERD_PORT: 8000
       SHEPHERD_LOG_LEVEL: ${SHEPHERD_LOG_LEVEL:-INFO}
       SHEPHERD_OPENAPI_PATH: /app/openapi/openapi.yaml
+      SHEPHERD_MIGRATIONS_PATH: /app/migrations
     ports:
       - "${SHEPHERD_PORT:-8000}:8000"
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test:
         - CMD

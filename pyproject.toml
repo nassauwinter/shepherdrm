@@ -9,10 +9,12 @@ description = "Resource leasing and management for people and automation"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.19.1",
     "fastapi",
     "psycopg[binary]",
     "pydantic-settings",
     "pyyaml",
+    "sqlalchemy>=2.0.52",
     "uvicorn[standard]",
 ]
 

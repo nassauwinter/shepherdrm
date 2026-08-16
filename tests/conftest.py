@@ -1,3 +1,5 @@
+"""Configure shared pytest behavior and test-environment defaults."""
+
 import pytest
 
 

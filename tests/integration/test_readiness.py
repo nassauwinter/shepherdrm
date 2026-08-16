@@ -1,6 +1,6 @@
-import os
+"""Verify readiness behavior for current, missing, and outdated schemas."""
+
 import uuid
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 import psycopg
@@ -10,27 +10,14 @@ from alembic.config import Config
 
 from shepherd_rm.application import create_app
 from shepherd_rm.config import Settings, get_settings
-
-
-def database_url_for_schema(database_url: str, schema: str) -> str:
-    """Add a PostgreSQL search path without discarding existing URL parameters."""
-    parts = urlsplit(database_url)
-    parameters = parse_qsl(parts.query, keep_blank_values=True)
-    existing_options = next((value for key, value in parameters if key == "options"), "")
-    parameters = [(key, value) for key, value in parameters if key != "options"]
-    parameters.append(("options", f"{existing_options} -csearch_path={schema}".strip()))
-    return urlunsplit(parts._replace(query=urlencode(parameters)))
+from tests.integration.support import database_url_for_schema
 
 
 @pytest.mark.anyio
 @pytest.mark.integration
-async def test_readiness_checks_postgresql() -> None:
+async def test_readiness_checks_postgresql(integration_database_url: str) -> None:
     """Readiness succeeds when PostgreSQL has the migration head shipped by the service."""
-    database_url = os.getenv("SHEPHERD_TEST_DATABASE_URL")
-    if database_url is None:
-        pytest.skip("SHEPHERD_TEST_DATABASE_URL is not configured")
-
-    app = create_app(settings=Settings(database_url=database_url))
+    app = create_app(settings=Settings(database_url=integration_database_url))
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",
@@ -46,18 +33,15 @@ async def test_readiness_checks_postgresql() -> None:
 @pytest.mark.parametrize("revision", [None, "7280c6a57e19"], ids=["absent", "outdated"])
 async def test_readiness_rejects_incompatible_schema(
     monkeypatch: pytest.MonkeyPatch,
+    integration_database_url: str,
     revision: str | None,
 ) -> None:
     """Readiness fails when migrations are either absent or behind the packaged head."""
-    database_url = os.getenv("SHEPHERD_TEST_DATABASE_URL")
-    if database_url is None:
-        pytest.skip("SHEPHERD_TEST_DATABASE_URL is not configured")
-
     schema = f"readiness_test_{uuid.uuid4().hex}"
-    with psycopg.connect(database_url, autocommit=True) as connection:
+    with psycopg.connect(integration_database_url, autocommit=True) as connection:
         connection.execute(f'CREATE SCHEMA "{schema}"')
 
-    schema_url = database_url_for_schema(database_url, schema)
+    schema_url = database_url_for_schema(integration_database_url, schema)
     try:
         if revision is not None:
             monkeypatch.setenv("SHEPHERD_DATABASE_URL", schema_url)
@@ -77,5 +61,5 @@ async def test_readiness_rejects_incompatible_schema(
         )
     finally:
         get_settings.cache_clear()
-        with psycopg.connect(database_url, autocommit=True) as connection:
+        with psycopg.connect(integration_database_url, autocommit=True) as connection:
             connection.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')

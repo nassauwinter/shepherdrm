@@ -1,7 +1,10 @@
+"""Validate the syntax and identifier integrity of the OpenAPI document."""
+
 from pathlib import Path
 from typing import Any
 
 import yaml
+from jsonschema import Draft202012Validator
 from openapi_spec_validator import validate
 
 CONTRACT_PATH = Path(__file__).parents[2] / "openapi" / "openapi.yaml"
@@ -30,3 +33,38 @@ def test_operation_ids_are_unique() -> None:
     ]
 
     assert len(operation_ids) == len(set(operation_ids))
+
+
+def test_issued_token_response_conforms_to_its_schema() -> None:
+    """The response schema accepts the complete one-time token representation."""
+    contract = load_contract()
+    schema = contract["components"]["schemas"]["TokenIssued"]
+    response = {
+        "id": "123e4567-e89b-12d3-a456-426614174000",
+        "name": "automation",
+        "token": "srm_secret",
+        "created_at": "2030-01-01T00:00:00Z",
+        "expires_at": None,
+        "last_used_at": None,
+        "revoked_at": None,
+    }
+
+    Draft202012Validator(schema, format_checker=Draft202012Validator.FORMAT_CHECKER).validate(
+        response
+    )
+
+
+def test_every_documented_error_response_has_a_problem_body() -> None:
+    """Shared error responses consistently describe the runtime Problem representation."""
+    responses = load_contract()["components"]["responses"]
+    for name in [
+        "BadRequest",
+        "Unauthorized",
+        "Forbidden",
+        "NotFound",
+        "Conflict",
+        "ValidationError",
+    ]:
+        assert responses[name]["content"]["application/problem+json"]["schema"] == {
+            "$ref": "#/components/schemas/Problem"
+        }

@@ -1,3 +1,5 @@
+"""Provide PostgreSQL transactions, locking, readiness, and URL helpers."""
+
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from uuid import UUID

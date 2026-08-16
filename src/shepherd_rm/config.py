@@ -1,3 +1,5 @@
+"""Define environment-backed runtime configuration for the service."""
+
 from functools import lru_cache
 from pathlib import Path
 
@@ -16,6 +18,7 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql://shepherd_rm:shepherd_rm_local@localhost:5432/shepherd_rm"
     database_connect_timeout_seconds: int = Field(default=5, ge=1)
+    login_token_ttl_seconds: int = Field(default=43_200, ge=60)
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
     log_level: str = "INFO"

@@ -1,3 +1,5 @@
+"""Load the committed OpenAPI document used as the runtime API contract."""
+
 from pathlib import Path
 from typing import Any
 

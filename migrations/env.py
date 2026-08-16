@@ -1,3 +1,5 @@
+"""Configure Alembic to migrate the Shepherd RM PostgreSQL schema."""
+
 from __future__ import annotations
 
 from logging.config import fileConfig

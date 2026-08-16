@@ -1,8 +1,8 @@
+"""Verify Alembic upgrades, downgrades, and model consistency on PostgreSQL."""
+
 from __future__ import annotations
 
-import os
 import uuid
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import psycopg
 import pytest
@@ -12,37 +12,28 @@ from sqlalchemy import create_engine, inspect
 
 from shepherd_rm.config import get_settings
 from shepherd_rm.database import sqlalchemy_database_url
+from tests.integration.support import database_url_for_schema
 
 EXPECTED_TABLES = {
     "alembic_version",
+    "api_tokens",
     "audit_events",
     "group_memberships",
     "groups",
     "leases",
+    "password_credentials",
     "principals",
     "resources",
 }
 
 
-def database_url_for_schema(database_url: str, schema: str) -> str:
-    """Add a PostgreSQL search path without discarding existing URL parameters."""
-    parts = urlsplit(database_url)
-    parameters = parse_qsl(parts.query, keep_blank_values=True)
-    existing_options = next((value for key, value in parameters if key == "options"), "")
-    parameters = [(key, value) for key, value in parameters if key != "options"]
-    options = f"{existing_options} -csearch_path={schema}".strip()
-    parameters.append(("options", options))
-    return urlunsplit(parts._replace(query=urlencode(parameters)))
-
-
 @pytest.mark.integration
 def test_initial_migration_upgrades_and_downgrades_postgresql(
     monkeypatch: pytest.MonkeyPatch,
+    integration_database_url: str,
 ) -> None:
     """The initial migration creates the domain schema and can remove it cleanly."""
-    database_url = os.getenv("SHEPHERD_TEST_DATABASE_URL")
-    if database_url is None:
-        pytest.skip("SHEPHERD_TEST_DATABASE_URL is not configured")
+    database_url = integration_database_url
 
     schema = f"migration_test_{uuid.uuid4().hex}"
     with psycopg.connect(database_url, autocommit=True) as connection:

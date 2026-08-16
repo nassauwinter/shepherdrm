@@ -1,7 +1,8 @@
+"""Verify transaction, timestamp, and row-lock behavior against PostgreSQL."""
+
 from __future__ import annotations
 
 import asyncio
-import os
 import uuid
 
 import psycopg
@@ -9,25 +10,23 @@ import pytest
 
 from shepherd_rm.config import Settings
 from shepherd_rm.database import lock_resource, transaction
-
-
-def database_url_or_skip() -> str:
-    database_url = os.getenv("SHEPHERD_TEST_DATABASE_URL")
-    if database_url is None:
-        pytest.skip("SHEPHERD_TEST_DATABASE_URL is not configured")
-    return database_url
+from tests.integration.support import (
+    acquire_competing_resource_lock,
+    wait_until_backend_waits_for_lock,
+)
 
 
 @pytest.mark.anyio
 @pytest.mark.integration
-async def test_transaction_rolls_back_on_failure() -> None:
+async def test_transaction_rolls_back_on_failure(
+    integration_database_url: str,
+    integration_settings: Settings,
+) -> None:
     """The transaction helper rolls back all writes when its body raises an error."""
-    database_url = database_url_or_skip()
     resource_id = uuid.uuid4()
-    settings = Settings(database_url=database_url)
 
     with pytest.raises(RuntimeError, match="force rollback"):
-        async with transaction(settings) as connection:
+        async with transaction(integration_settings) as connection:
             await connection.execute(
                 """
                 INSERT INTO resources (id, name, type, sharing_mode)
@@ -37,7 +36,7 @@ async def test_transaction_rolls_back_on_failure() -> None:
             )
             raise RuntimeError("force rollback")
 
-    async with await psycopg.AsyncConnection.connect(database_url) as connection:
+    async with await psycopg.AsyncConnection.connect(integration_database_url) as connection:
         cursor = await connection.execute(
             "SELECT COUNT(*) FROM resources WHERE id = %s",
             (resource_id,),
@@ -49,12 +48,13 @@ async def test_transaction_rolls_back_on_failure() -> None:
 
 @pytest.mark.anyio
 @pytest.mark.integration
-async def test_resource_lock_serializes_competing_transactions() -> None:
+async def test_resource_lock_serializes_competing_transactions(
+    integration_database_url: str,
+    integration_settings: Settings,
+) -> None:
     """A second resource lock waits until the transaction holding the row commits."""
-    database_url = database_url_or_skip()
     resource_id = uuid.uuid4()
-    settings = Settings(database_url=database_url)
-    async with transaction(settings) as connection:
+    async with transaction(integration_settings) as connection:
         await connection.execute(
             """
             INSERT INTO resources (id, name, type, sharing_mode)
@@ -63,37 +63,40 @@ async def test_resource_lock_serializes_competing_transactions() -> None:
             (resource_id, f"locking-{resource_id}", "test-resource", "Exclusive"),
         )
 
-    competing_started = asyncio.Event()
-
-    async def acquire_competing_lock() -> bool:
-        async with transaction(settings) as connection:
-            competing_started.set()
-            return await lock_resource(connection, resource_id)
+    competing_pid: asyncio.Future[int] = asyncio.get_running_loop().create_future()
 
     try:
-        async with transaction(settings) as connection:
-            assert await lock_resource(connection, resource_id)
-            competing_task = asyncio.create_task(acquire_competing_lock())
-            await competing_started.wait()
-            await asyncio.sleep(0.1)
-            assert not competing_task.done()
+        async with asyncio.TaskGroup() as tasks:
+            async with transaction(integration_settings) as connection:
+                assert await lock_resource(connection, resource_id)
+                competing_task = tasks.create_task(
+                    acquire_competing_resource_lock(
+                        integration_settings,
+                        resource_id,
+                        competing_pid,
+                    )
+                )
 
-        assert await asyncio.wait_for(competing_task, timeout=1) is True
+                async with asyncio.timeout(5):
+                    pid = await competing_pid
+                    await wait_until_backend_waits_for_lock(integration_database_url, pid)
+
+                assert not competing_task.done()
+
+        assert competing_task.result() is True
     finally:
-        async with transaction(settings) as connection:
+        async with transaction(integration_settings) as connection:
             await connection.execute("DELETE FROM resources WHERE id = %s", (resource_id,))
 
 
 @pytest.mark.anyio
 @pytest.mark.integration
-async def test_raw_updates_advance_updated_at() -> None:
+async def test_raw_updates_advance_updated_at(integration_settings: Settings) -> None:
     """PostgreSQL advances updated_at even when a resource is changed through raw SQL."""
-    database_url = database_url_or_skip()
     resource_id = uuid.uuid4()
-    settings = Settings(database_url=database_url)
 
     try:
-        async with transaction(settings) as connection:
+        async with transaction(integration_settings) as connection:
             cursor = await connection.execute(
                 """
                 INSERT INTO resources (id, name, type, sharing_mode)
@@ -107,7 +110,7 @@ async def test_raw_updates_advance_updated_at() -> None:
             inserted_at = inserted_row[0]
 
         await asyncio.sleep(0.01)
-        async with transaction(settings) as connection:
+        async with transaction(integration_settings) as connection:
             cursor = await connection.execute(
                 "UPDATE resources SET name = %s WHERE id = %s RETURNING updated_at",
                 (f"updated-{resource_id}", resource_id),
@@ -118,5 +121,5 @@ async def test_raw_updates_advance_updated_at() -> None:
 
         assert updated_at > inserted_at
     finally:
-        async with transaction(settings) as connection:
+        async with transaction(integration_settings) as connection:
             await connection.execute("DELETE FROM resources WHERE id = %s", (resource_id,))

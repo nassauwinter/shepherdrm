@@ -1,3 +1,5 @@
+"""Verify public application behavior without requiring external services."""
+
 import httpx
 import pytest
 
@@ -77,3 +79,23 @@ async def test_server_exposes_committed_openapi_contract() -> None:
 
     assert response.status_code == 200
     assert response.json() == app.openapi()
+
+
+@pytest.mark.anyio
+async def test_validation_problem_does_not_reflect_secret_input() -> None:
+    """A rejected password is never included in the validation response."""
+    password = "secret-" + ("x" * 1024)
+    app = create_app(readiness_check=ready)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/v1/auth/login",
+            json={"username": "admin", "password": password},
+        )
+
+    assert response.status_code == 422
+    assert response.headers["content-type"] == "application/problem+json"
+    assert password not in response.text
+    assert response.json()["detail"] == "The request did not satisfy the API contract"

@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.19.1",
+    "argon2-cffi>=25.1.0",
     "fastapi",
     "psycopg[binary]",
     "pydantic-settings",
@@ -20,6 +21,7 @@ dependencies = [
 
 [project.scripts]
 shepherd-rm = "shepherd_rm.main:run"
+shepherd-rm-bootstrap-admin = "shepherd_rm.identity.bootstrap:run"
 
 [dependency-groups]
 dev = [

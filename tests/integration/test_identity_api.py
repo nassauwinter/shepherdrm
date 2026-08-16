@@ -1,0 +1,433 @@
+"""Exercise isolated authentication and identity workflows against PostgreSQL."""
+
+from __future__ import annotations
+
+import asyncio
+import uuid
+from datetime import UTC, datetime, timedelta
+from typing import Literal
+
+import httpx
+import psycopg
+import pytest
+from alembic import command
+from alembic.config import Config
+
+from shepherd_rm.config import Settings, get_settings
+from shepherd_rm.database import transaction
+from shepherd_rm.identity.authentication import (
+    AuthenticationError,
+    authenticate_token,
+    issue_token,
+    token_hash,
+)
+from shepherd_rm.identity.bootstrap import bootstrap_administrator
+from shepherd_rm.identity.database import identity_transaction
+from shepherd_rm.identity.models import PrincipalCreate
+from shepherd_rm.identity.persistence import create_principal
+from tests.integration.support import IdentityEnvironment, database_url_for_schema
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("actor", "expected_status"),
+    [("anonymous", 401), ("user", 403)],
+    ids=["authentication-required", "administrator-required"],
+)
+async def test_user_administration_requires_an_administrator(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+    actor: Literal["anonymous", "user"],
+    expected_status: int,
+) -> None:
+    """Anonymous and regular-user requests cannot list managed users."""
+    headers = {} if actor == "anonymous" else identity_environment.authorization("user")
+
+    response = await identity_client.get("/v1/users", headers=headers)
+
+    assert response.status_code == expected_status
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_login_token_identifies_the_authenticated_user(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """Valid local credentials issue a token that resolves to the same user."""
+    login_response = await identity_client.post(
+        "/v1/auth/login",
+        json={
+            "username": identity_environment.name("user"),
+            "password": "regular-user-password",
+        },
+    )
+    assert login_response.status_code == 200
+    access_token = login_response.json()["access_token"]
+
+    me_response = await identity_client.get(
+        "/v1/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert me_response.status_code == 200
+    assert me_response.json()["id"] == str(identity_environment.user_id)
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_service_token_is_shown_once_and_rejected_after_revocation(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """A service token authenticates, is hidden from listings, and stops after revocation."""
+    admin_headers = identity_environment.authorization("admin")
+    service_response = await identity_client.post(
+        "/v1/service-identities",
+        headers=admin_headers,
+        json={
+            "name": identity_environment.name("service"),
+            "display_name": "Test service",
+        },
+    )
+    assert service_response.status_code == 201
+    service_id = service_response.json()["id"]
+
+    token_response = await identity_client.post(
+        f"/v1/service-identities/{service_id}/api-tokens",
+        headers=admin_headers,
+        json={"name": "automation"},
+    )
+    assert token_response.status_code == 201
+    token_payload = token_response.json()
+    service_token = token_payload["token"]
+
+    listed_response = await identity_client.get(
+        f"/v1/service-identities/{service_id}/api-tokens",
+        headers=admin_headers,
+    )
+    assert listed_response.status_code == 200
+    listed_token = next(
+        item for item in listed_response.json() if item["id"] == token_payload["id"]
+    )
+    assert "token" not in listed_token
+
+    me_response = await identity_client.get(
+        "/v1/me",
+        headers={"Authorization": f"Bearer {service_token}"},
+    )
+    assert me_response.status_code == 200
+    assert me_response.json()["id"] == service_id
+
+    revoke_response = await identity_client.delete(
+        f"/v1/service-identities/{service_id}/api-tokens/{token_payload['id']}",
+        headers=admin_headers,
+    )
+    assert revoke_response.status_code == 204
+
+    rejected_response = await identity_client.get(
+        "/v1/me",
+        headers={"Authorization": f"Bearer {service_token}"},
+    )
+    assert rejected_response.status_code == 401
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_administrator_can_manage_a_user_lifecycle(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """An administrator can create, update, and archive a managed user."""
+    admin_headers = identity_environment.authorization("admin")
+    create_response = await identity_client.post(
+        "/v1/users",
+        headers=admin_headers,
+        json={
+            "name": identity_environment.name("managed"),
+            "display_name": "Managed user",
+            "password": "managed-user-password",
+        },
+    )
+    assert create_response.status_code == 201
+    user_id = create_response.json()["id"]
+
+    update_response = await identity_client.patch(
+        f"/v1/users/{user_id}",
+        headers=admin_headers,
+        json={"display_name": "Updated user"},
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["display_name"] == "Updated user"
+
+    archive_response = await identity_client.delete(
+        f"/v1/users/{user_id}",
+        headers=admin_headers,
+    )
+
+    assert archive_response.status_code == 204
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_administrator_can_manage_a_group_membership_lifecycle(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """An administrator can create, update, archive, and change membership of a group."""
+    admin_headers = identity_environment.authorization("admin")
+    group_response = await identity_client.post(
+        "/v1/groups",
+        headers=admin_headers,
+        json={"name": identity_environment.name("group"), "description": "Initial"},
+    )
+    assert group_response.status_code == 201
+    group_id = group_response.json()["id"]
+
+    membership_response = await identity_client.put(
+        f"/v1/groups/{group_id}/members/{identity_environment.user_id}",
+        headers=admin_headers,
+    )
+    assert membership_response.status_code == 204
+
+    update_response = await identity_client.patch(
+        f"/v1/groups/{group_id}",
+        headers=admin_headers,
+        json={"description": "Updated"},
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["description"] == "Updated"
+
+    removal_response = await identity_client.delete(
+        f"/v1/groups/{group_id}/members/{identity_environment.user_id}",
+        headers=admin_headers,
+    )
+    assert removal_response.status_code == 204
+
+    archive_response = await identity_client.delete(
+        f"/v1/groups/{group_id}",
+        headers=admin_headers,
+    )
+
+    assert archive_response.status_code == 204
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_empty_group_patch_preserves_description(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """An empty group patch is a no-op rather than an implicit description clear."""
+    headers = identity_environment.authorization("admin")
+    create_response = await identity_client.post(
+        "/v1/groups",
+        headers=headers,
+        json={"name": identity_environment.name("no-op-group"), "description": "Keep me"},
+    )
+    assert create_response.status_code == 201
+
+    update_response = await identity_client.patch(
+        f"/v1/groups/{create_response.json()['id']}",
+        headers=headers,
+        json={},
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["description"] == "Keep me"
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+@pytest.mark.parametrize("action", ["archive", "demote"])
+async def test_final_active_administrator_cannot_be_removed(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+    action: str,
+) -> None:
+    """Archiving or demoting the final usable administrator is rejected transactionally."""
+    headers = identity_environment.authorization("admin")
+    if action == "archive":
+        response = await identity_client.delete(
+            f"/v1/users/{identity_environment.admin_id}", headers=headers
+        )
+    else:
+        response = await identity_client.patch(
+            f"/v1/users/{identity_environment.admin_id}",
+            headers=headers,
+            json={"role": "User"},
+        )
+
+    assert response.status_code == 409
+    authenticated = await identity_client.get("/v1/me", headers=headers)
+    assert authenticated.status_code == 200
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_identity_write_persists_its_audit_event(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """A committed identity write records its actor, action, subject, and correlation ID."""
+    correlation_id = f"identity-test-{identity_environment.suffix}"
+    response = await identity_client.post(
+        "/v1/service-identities",
+        headers={
+            **identity_environment.authorization("admin"),
+            "X-Correlation-ID": correlation_id,
+        },
+        json={
+            "name": identity_environment.name("audited-service"),
+            "display_name": "Audited service",
+        },
+    )
+    assert response.status_code == 201
+    service_id = response.json()["id"]
+
+    async with transaction(identity_environment.settings) as connection:
+        cursor = await connection.execute(
+            """
+            SELECT actor_id, action, subject_type, subject_id, correlation_id, metadata
+            FROM audit_events
+            WHERE subject_type = 'Principal' AND subject_id = %s
+            """,
+            (service_id,),
+        )
+        audit_event = await cursor.fetchone()
+
+    assert audit_event == (
+        identity_environment.admin_id,
+        "principal.created",
+        "Principal",
+        service_id,
+        correlation_id,
+        {},
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_identity_write_and_audit_event_roll_back_together(
+    identity_environment: IdentityEnvironment,
+) -> None:
+    """A failed identity transaction persists neither its domain row nor its audit event."""
+    name = identity_environment.name("rolled-back-service")
+    subject_id: uuid.UUID | None = None
+
+    with pytest.raises(RuntimeError, match="force identity rollback"):
+        async with identity_transaction(identity_environment.settings) as connection:
+            principal = await create_principal(
+                connection,
+                PrincipalCreate(name=name, display_name="Rolled back service"),
+                "Service",
+                identity_environment.admin_id,
+            )
+            subject_id = principal.id
+            raise RuntimeError("force identity rollback")
+
+    assert subject_id is not None
+    async with transaction(identity_environment.settings) as connection:
+        cursor = await connection.execute(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM principals WHERE id = %s),
+                (SELECT COUNT(*) FROM audit_events
+                 WHERE subject_type = 'Principal' AND subject_id = %s)
+            """,
+            (subject_id, str(subject_id)),
+        )
+        persisted_counts = await cursor.fetchone()
+
+    assert persisted_counts == (0, 0)
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "credential_state",
+    ["expired", "archived"],
+    ids=["expired-token", "archived-principal"],
+)
+async def test_inactive_credentials_cannot_authenticate(
+    identity_environment: IdentityEnvironment,
+    credential_state: Literal["expired", "archived"],
+) -> None:
+    """Authentication rejects expired tokens and tokens for archived principals."""
+    principal_id = uuid.uuid4()
+    token = f"srm_{uuid.uuid4().hex}"
+
+    async with transaction(identity_environment.settings) as connection:
+        await connection.execute(
+            """
+            INSERT INTO principals (id, kind, role, name, display_name, archived_at)
+            VALUES (%s, 'Service', 'User', %s, 'Inactive principal', %s)
+            """,
+            (
+                principal_id,
+                identity_environment.name(credential_state),
+                datetime.now(UTC) if credential_state == "archived" else None,
+            ),
+        )
+        if credential_state == "expired":
+            await connection.execute(
+                """
+                INSERT INTO api_tokens
+                    (id, principal_id, name, token_hash, created_at, expires_at)
+                VALUES (%s, %s, 'expired', %s, %s, %s)
+                """,
+                (
+                    uuid.uuid4(),
+                    principal_id,
+                    token_hash(token),
+                    datetime.now(UTC) - timedelta(days=2),
+                    datetime.now(UTC) - timedelta(days=1),
+                ),
+            )
+    if credential_state == "archived":
+        async with identity_transaction(identity_environment.settings) as connection:
+            token = (await issue_token(connection, principal_id, "archived", None)).token
+
+    with pytest.raises(AuthenticationError):
+        await authenticate_token(identity_environment.settings, token)
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_concurrent_bootstrap_creates_exactly_one_administrator(
+    monkeypatch: pytest.MonkeyPatch,
+    integration_database_url: str,
+) -> None:
+    """Concurrent recovery ignores a legacy unusable admin and creates one usable admin."""
+    database_url = integration_database_url
+    schema = f"bootstrap_test_{uuid.uuid4().hex}"
+    with psycopg.connect(database_url, autocommit=True) as connection:
+        connection.execute(f'CREATE SCHEMA "{schema}"')
+    schema_url = database_url_for_schema(database_url, schema)
+    monkeypatch.setenv("SHEPHERD_DATABASE_URL", schema_url)
+    get_settings.cache_clear()
+
+    try:
+        command.upgrade(Config("alembic.ini"), "head")
+        settings = Settings(database_url=schema_url)
+        async with transaction(settings) as connection:
+            await connection.execute(
+                """
+                INSERT INTO principals (id, kind, role, name, display_name)
+                VALUES (%s, 'User', 'Admin', 'legacy-admin', 'Legacy administrator')
+                """,
+                (uuid.uuid4(),),
+            )
+        results = await asyncio.gather(
+            bootstrap_administrator("admin-one", "Admin one", "secure-password-one", settings),
+            bootstrap_administrator("admin-two", "Admin two", "secure-password-two", settings),
+            return_exceptions=True,
+        )
+
+        assert sum(isinstance(result, uuid.UUID) for result in results) == 1
+        assert sum(isinstance(result, RuntimeError) for result in results) == 1
+    finally:
+        get_settings.cache_clear()
+        with psycopg.connect(database_url, autocommit=True) as connection:
+            connection.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')

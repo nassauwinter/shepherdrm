@@ -1,3 +1,5 @@
+"""Configure structured JSON logging for service and request events."""
+
 import json
 import logging
 from datetime import UTC, datetime

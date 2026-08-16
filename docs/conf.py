@@ -1,3 +1,5 @@
+"""Configure the Sphinx documentation build for Shepherd RM."""
+
 from shepherd_rm import __version__
 
 project = "Shepherd RM"

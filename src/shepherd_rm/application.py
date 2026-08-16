@@ -1,3 +1,5 @@
+"""Assemble the FastAPI application, middleware, and operational endpoints."""
+
 from __future__ import annotations
 
 import logging
@@ -6,7 +8,8 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
@@ -14,8 +17,10 @@ from starlette.responses import Response
 from shepherd_rm.config import Settings, get_settings
 from shepherd_rm.contract import load_openapi_contract
 from shepherd_rm.database import check_database
+from shepherd_rm.identity.api import build_identity_router
 from shepherd_rm.logging import configure_logging
 from shepherd_rm.models import HealthResponse, Problem, ReadinessResponse
+from shepherd_rm.request_context import reset_correlation_id, set_correlation_id
 
 ReadinessCheck = Callable[[], Awaitable[None]]
 LOGGER = logging.getLogger(__name__)
@@ -44,11 +49,45 @@ def create_app(
 
     contract = load_openapi_contract(current_settings.openapi_path)
     app = ContractFastAPI(contract)
+    app.include_router(build_identity_router(current_settings))
 
     async def default_readiness_check() -> None:
         await check_database(current_settings)
 
     check_readiness = readiness_check or default_readiness_check
+
+    @app.exception_handler(HTTPException)
+    async def http_problem(request: Request, error: HTTPException) -> JSONResponse:
+        correlation_id = getattr(request.state, "correlation_id", str(uuid4()))
+        problem = Problem(
+            title="Request failed",
+            status=error.status_code,
+            detail=str(error.detail),
+            correlation_id=correlation_id,
+        )
+        headers = error.headers or {}
+        return JSONResponse(
+            status_code=error.status_code,
+            content=problem.model_dump(exclude_none=True),
+            headers=headers,
+            media_type="application/problem+json",
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_problem(request: Request, _error: RequestValidationError) -> JSONResponse:
+        """Return validation failures without reflecting potentially secret input."""
+        correlation_id = getattr(request.state, "correlation_id", str(uuid4()))
+        problem = Problem(
+            title="Request validation failed",
+            status=422,
+            detail="The request did not satisfy the API contract",
+            correlation_id=correlation_id,
+        )
+        return JSONResponse(
+            status_code=422,
+            content=problem.model_dump(exclude_none=True),
+            media_type="application/problem+json",
+        )
 
     @app.middleware("http")
     async def correlation_id_middleware(
@@ -67,7 +106,11 @@ def create_app(
             else str(uuid4())
         )
         request.state.correlation_id = correlation_id
-        response = await call_next(request)
+        context_token = set_correlation_id(correlation_id)
+        try:
+            response = await call_next(request)
+        finally:
+            reset_correlation_id(context_token)
         response.headers["x-correlation-id"] = correlation_id
         LOGGER.info(
             "request completed",

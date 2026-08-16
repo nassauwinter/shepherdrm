@@ -1,3 +1,5 @@
+"""Expose the production ASGI application and console-server entry point."""
+
 import uvicorn
 
 from shepherd_rm.application import create_app

@@ -15,6 +15,8 @@ servers:
 tags:
   - name: Operations
     description: Service health and readiness
+  - name: Identity
+    description: Authentication and identity administration
 paths:
   /health:
     get:
@@ -57,13 +59,593 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+  /v1/auth/login:
+    post:
+      tags: [Identity]
+      summary: Authenticate a local user
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/LoginRequest"}
+      responses:
+        "200":
+          description: A short-lived bearer token.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LoginResponse"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/me:
+    get:
+      tags: [Identity]
+      summary: Get the authenticated principal
+      operationId: getMe
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: The authenticated principal.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Principal"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /v1/me/password:
+    put:
+      tags: [Identity]
+      summary: Change the authenticated user's password
+      operationId: changeMyPassword
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/Password"}
+      responses:
+        "204": {description: Password changed.}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/me/api-tokens:
+    post:
+      tags: [Identity]
+      summary: Create an API token for the authenticated principal
+      operationId: createMyToken
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/Token"}
+      responses:
+        "201":
+          description: Token metadata and its one-time plaintext value.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TokenIssued"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    get:
+      tags: [Identity]
+      summary: List API tokens for the authenticated principal
+      operationId: listMyTokens
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Token metadata without token values.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/Token"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /v1/me/api-tokens/{token_id}:
+    parameters:
+      - {$ref: "#/components/parameters/TokenId"}
+    delete:
+      tags: [Identity]
+      summary: Revoke one of the authenticated principal's tokens
+      operationId: revokeMyToken
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: Token revoked.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/users:
+    post:
+      tags: [Identity]
+      summary: Create a user
+      operationId: createUser
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/Principal"}
+      responses:
+        "201": {$ref: "#/components/responses/Principal"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    get:
+      tags: [Identity]
+      summary: List users
+      operationId: listUsers
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/PrincipalList"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+  /v1/users/{user_id}:
+    parameters:
+      - {$ref: "#/components/parameters/UserId"}
+    get:
+      tags: [Identity]
+      summary: Get a user
+      operationId: getUser
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Principal"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    patch:
+      tags: [Identity]
+      summary: Update a user
+      operationId: updateUser
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/PrincipalUpdate"}
+      responses:
+        "200": {$ref: "#/components/responses/Principal"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [Identity]
+      summary: Archive a user
+      operationId: archiveUser
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: User archived.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/users/{user_id}/password:
+    parameters:
+      - {$ref: "#/components/parameters/UserId"}
+    put:
+      tags: [Identity]
+      summary: Reset a user's password
+      operationId: resetUserPassword
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/Password"}
+      responses:
+        "204": {description: Password reset.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/service-identities:
+    post:
+      tags: [Identity]
+      summary: Create a service identity
+      operationId: createServiceIdentity
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/Principal"}
+      responses:
+        "201": {$ref: "#/components/responses/Principal"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    get:
+      tags: [Identity]
+      summary: List service identities
+      operationId: listServiceIdentities
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/PrincipalList"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+  /v1/service-identities/{identity_id}:
+    parameters:
+      - {$ref: "#/components/parameters/IdentityId"}
+    get:
+      tags: [Identity]
+      summary: Get a service identity
+      operationId: getServiceIdentity
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Principal"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    patch:
+      tags: [Identity]
+      summary: Update a service identity
+      operationId: updateServiceIdentity
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/PrincipalUpdate"}
+      responses:
+        "200": {$ref: "#/components/responses/Principal"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [Identity]
+      summary: Archive a service identity
+      operationId: archiveServiceIdentity
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: Service identity archived.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/service-identities/{identity_id}/api-tokens:
+    parameters:
+      - {$ref: "#/components/parameters/IdentityId"}
+    post:
+      tags: [Identity]
+      summary: Create a service-identity token
+      operationId: createServiceToken
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/Token"}
+      responses:
+        "201":
+          description: Token metadata and its one-time plaintext value.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TokenIssued"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    get:
+      tags: [Identity]
+      summary: List service-identity tokens
+      operationId: listServiceTokens
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Token metadata without token values.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/Token"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/service-identities/{identity_id}/api-tokens/{token_id}:
+    parameters:
+      - {$ref: "#/components/parameters/IdentityId"}
+      - {$ref: "#/components/parameters/TokenId"}
+    delete:
+      tags: [Identity]
+      summary: Revoke a service-identity token
+      operationId: revokeServiceToken
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: Token revoked.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/groups:
+    post:
+      tags: [Identity]
+      summary: Create a group
+      operationId: createGroup
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/GroupCreate"}
+      responses:
+        "201": {$ref: "#/components/responses/Group"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    get:
+      tags: [Identity]
+      summary: List groups
+      operationId: listGroups
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Groups.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/Group"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+  /v1/groups/{group_id}:
+    parameters:
+      - {$ref: "#/components/parameters/GroupId"}
+    get:
+      tags: [Identity]
+      summary: Get a group
+      operationId: getGroup
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Group"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    patch:
+      tags: [Identity]
+      summary: Update a group
+      operationId: updateGroup
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/GroupUpdate"}
+      responses:
+        "200": {$ref: "#/components/responses/Group"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [Identity]
+      summary: Archive a group
+      operationId: archiveGroup
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: Group archived.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/groups/{group_id}/members/{user_id}:
+    parameters:
+      - {$ref: "#/components/parameters/GroupId"}
+      - {$ref: "#/components/parameters/UserId"}
+    put:
+      tags: [Identity]
+      summary: Add a user to a group
+      operationId: addGroupMember
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: Membership exists.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [Identity]
+      summary: Remove a user from a group
+      operationId: removeGroupMember
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: Membership removed or already absent.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "422": {$ref: "#/components/responses/ValidationError"}
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    UserId:
+      name: user_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    IdentityId:
+      name: identity_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    GroupId:
+      name: group_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    TokenId:
+      name: token_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+  requestBodies:
+    Password:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/PasswordRequest"}
+    Principal:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/PrincipalCreate"}
+    PrincipalUpdate:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/PrincipalUpdate"}
+    Token:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/TokenCreate"}
+  responses:
+    Unauthorized:
+      description: Authentication is required or invalid.
+      headers:
+        x-correlation-id: {$ref: "#/components/headers/CorrelationId"}
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    Forbidden:
+      description: The principal lacks administrator permission.
+      headers:
+        x-correlation-id: {$ref: "#/components/headers/CorrelationId"}
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    NotFound:
+      description: The requested record does not exist.
+      headers:
+        x-correlation-id: {$ref: "#/components/headers/CorrelationId"}
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    BadRequest:
+      description: The request is valid JSON but cannot be performed.
+      headers:
+        x-correlation-id: {$ref: "#/components/headers/CorrelationId"}
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    Conflict:
+      description: The request conflicts with the current identity state.
+      headers:
+        x-correlation-id: {$ref: "#/components/headers/CorrelationId"}
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    ValidationError:
+      description: The request does not satisfy the API contract.
+      headers:
+        x-correlation-id: {$ref: "#/components/headers/CorrelationId"}
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    Principal:
+      description: Principal details.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Principal"}
+    PrincipalList:
+      description: Principals.
+      content:
+        application/json:
+          schema:
+            type: array
+            items: {$ref: "#/components/schemas/Principal"}
+    Group:
+      description: Group details.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Group"}
   headers:
     CorrelationId:
       description: Correlates the response with logs and traces.
       schema:
         type: string
   schemas:
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username: {type: string, minLength: 1, maxLength: 255}
+        password: {type: string, minLength: 1, maxLength: 1024, writeOnly: true}
+    LoginResponse:
+      type: object
+      additionalProperties: false
+      required: [access_token, token_type, expires_at]
+      properties:
+        access_token: {type: string}
+        token_type: {type: string, const: bearer}
+        expires_at: {type: string, format: date-time}
+    PasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [password]
+      properties:
+        password: {type: string, minLength: 12, maxLength: 1024, writeOnly: true}
+    PrincipalCreate:
+      type: object
+      additionalProperties: false
+      required: [name, display_name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        display_name: {type: string, minLength: 1, maxLength: 255}
+        role: {type: string, enum: [Admin, User], default: User}
+        password: {type: [string, "null"], minLength: 12, maxLength: 1024, writeOnly: true}
+    PrincipalUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        display_name: {type: [string, "null"], minLength: 1, maxLength: 255}
+        role: {type: [string, "null"], enum: [Admin, User, null]}
+    Principal:
+      type: object
+      additionalProperties: false
+      required: [id, kind, role, name, display_name, archived_at, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string, enum: [User, Service]}
+        role: {type: string, enum: [Admin, User]}
+        name: {type: string}
+        display_name: {type: string}
+        archived_at: {type: [string, "null"], format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    TokenCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        expires_at: {type: [string, "null"], format: date-time}
+    Token:
+      type: object
+      additionalProperties: false
+      required: [id, name, created_at, expires_at, last_used_at, revoked_at]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        created_at: {type: string, format: date-time}
+        expires_at: {type: [string, "null"], format: date-time}
+        last_used_at: {type: [string, "null"], format: date-time}
+        revoked_at: {type: [string, "null"], format: date-time}
+    TokenIssued:
+      type: object
+      additionalProperties: false
+      required: [id, name, token, created_at, expires_at, last_used_at, revoked_at]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        token: {type: string}
+        created_at: {type: string, format: date-time}
+        expires_at: {type: [string, "null"], format: date-time}
+        last_used_at: {type: [string, "null"], format: date-time}
+        revoked_at: {type: [string, "null"], format: date-time}
+    GroupCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        description: {type: [string, "null"]}
+    GroupUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        description: {type: [string, "null"]}
+    Group:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, archived_at, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        description: {type: [string, "null"]}
+        archived_at: {type: [string, "null"], format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
     HealthResponse:
       type: object
       additionalProperties: false

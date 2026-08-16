@@ -1,3 +1,5 @@
+"""Define shared operational and problem-details API models."""
+
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict

@@ -1,3 +1,5 @@
+"""Verify the package exposes its supported public metadata."""
+
 from shepherd_rm import __version__
 
 

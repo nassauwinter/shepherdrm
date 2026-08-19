@@ -87,5 +87,8 @@ GitHub Actions uses the checked-in `uv.lock` to run tests on every supported Pyt
 
 The service provides migration-aware PostgreSQL readiness, local user login,
 administrator and regular-user authorization, user/group/service-identity
-administration, and revocable API tokens. Resource management is the next
-implementation milestone.
+administration, revocable API tokens, and an authenticated resource catalog.
+Administrators can manage exclusive and shared resources while users can
+discover public or explicitly granted resources by type, labels, state, sharing
+mode, and availability. Restricted resources support direct-principal and group
+access grants. Core leasing is the next implementation milestone.

@@ -1,4 +1,4 @@
-"""create initial schema
+"""Create the complete pre-release baseline schema.
 
 Revision ID: 7280c6a57e19
 Revises:
@@ -78,6 +78,9 @@ def upgrade() -> None:
         ),
         sa.Column("sharing_mode", sa.String(length=16), nullable=False),
         sa.Column(
+            "visibility_mode", sa.String(length=16), server_default="Restricted", nullable=False
+        ),
+        sa.Column(
             "operational_status", sa.String(length=16), server_default="Active", nullable=False
         ),
         sa.Column("version", sa.Integer(), server_default="1", nullable=False),
@@ -103,6 +106,10 @@ def upgrade() -> None:
             "sharing_mode IN ('Exclusive', 'Shared')",
             name=op.f("ck_resources_sharing_mode_allowed"),
         ),
+        sa.CheckConstraint(
+            "visibility_mode IN ('Public', 'Restricted')",
+            name=op.f("ck_resources_visibility_mode_allowed"),
+        ),
         sa.CheckConstraint("version > 0", name=op.f("ck_resources_version_positive")),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_resources")),
         sa.UniqueConstraint("name", name=op.f("uq_resources_name")),
@@ -113,6 +120,14 @@ def upgrade() -> None:
         "resources",
         ["type", "sharing_mode", "operational_status"],
         unique=False,
+        postgresql_where=sa.text("archived_at IS NULL"),
+    )
+    op.create_index(
+        "ix_resources_labels_gin",
+        "resources",
+        ["labels"],
+        unique=False,
+        postgresql_using="gin",
     )
     op.create_index(op.f("ix_resources_type"), "resources", ["type"], unique=False)
     op.create_table(
@@ -174,6 +189,131 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("group_id", "principal_id", name=op.f("pk_group_memberships")),
+    )
+    op.create_index(
+        "ix_group_memberships_principal_id",
+        "group_memberships",
+        ["principal_id"],
+        unique=False,
+    )
+    op.create_table(
+        "api_tokens",
+        sa.Column("id", sa.UUID(), nullable=False),
+        sa.Column("principal_id", sa.UUID(), nullable=False),
+        sa.Column("name", sa.String(length=255), nullable=False),
+        sa.Column("token_hash", sa.String(length=64), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+            nullable=False,
+        ),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("last_used_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
+        sa.CheckConstraint(
+            "expires_at IS NULL OR expires_at > created_at",
+            name=op.f("ck_api_tokens_expiry_after_creation"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["principal_id"],
+            ["principals.id"],
+            name=op.f("fk_api_tokens_principal_id_principals"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_api_tokens")),
+        sa.UniqueConstraint("token_hash", name=op.f("uq_api_tokens_token_hash")),
+    )
+    op.create_index(op.f("ix_api_tokens_expires_at"), "api_tokens", ["expires_at"], unique=False)
+    op.create_index(
+        "ix_api_tokens_principal_active",
+        "api_tokens",
+        ["principal_id", "revoked_at", "expires_at"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_api_tokens_principal_id"), "api_tokens", ["principal_id"], unique=False
+    )
+    op.create_index(op.f("ix_api_tokens_revoked_at"), "api_tokens", ["revoked_at"], unique=False)
+    op.create_table(
+        "password_credentials",
+        sa.Column("principal_id", sa.UUID(), nullable=False),
+        sa.Column("password_hash", sa.Text(), nullable=False),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["principal_id"],
+            ["principals.id"],
+            name=op.f("fk_password_credentials_principal_id_principals"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("principal_id", name=op.f("pk_password_credentials")),
+    )
+    op.create_table(
+        "resource_principal_grants",
+        sa.Column("resource_id", sa.UUID(), nullable=False),
+        sa.Column("principal_id", sa.UUID(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["principal_id"],
+            ["principals.id"],
+            name=op.f("fk_resource_principal_grants_principal_id_principals"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["resource_id"],
+            ["resources.id"],
+            name=op.f("fk_resource_principal_grants_resource_id_resources"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "resource_id", "principal_id", name=op.f("pk_resource_principal_grants")
+        ),
+    )
+    op.create_index(
+        "ix_resource_principal_grants_principal_id",
+        "resource_principal_grants",
+        ["principal_id"],
+        unique=False,
+    )
+    op.create_table(
+        "resource_group_grants",
+        sa.Column("resource_id", sa.UUID(), nullable=False),
+        sa.Column("group_id", sa.UUID(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ["group_id"],
+            ["groups.id"],
+            name=op.f("fk_resource_group_grants_group_id_groups"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["resource_id"],
+            ["resources.id"],
+            name=op.f("fk_resource_group_grants_resource_id_resources"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("resource_id", "group_id", name=op.f("pk_resource_group_grants")),
+    )
+    op.create_index(
+        "ix_resource_group_grants_group_id",
+        "resource_group_grants",
+        ["group_id"],
+        unique=False,
     )
     op.create_table(
         "leases",
@@ -238,11 +378,36 @@ def upgrade() -> None:
         postgresql_where=sa.text("ended_at IS NULL"),
     )
     op.create_index(op.f("ix_leases_resource_id"), "leases", ["resource_id"], unique=False)
+    op.execute(
+        """
+        CREATE FUNCTION shepherd_set_updated_at()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            NEW.updated_at = CURRENT_TIMESTAMP;
+            RETURN NEW;
+        END;
+        $$
+        """
+    )
+    for table_name in ("principals", "groups", "resources"):
+        op.execute(
+            f"""
+            CREATE TRIGGER trg_{table_name}_set_updated_at
+            BEFORE UPDATE ON {table_name}
+            FOR EACH ROW
+            EXECUTE FUNCTION shepherd_set_updated_at()
+            """
+        )
     # ### end Alembic commands ###
 
 
 def downgrade() -> None:
     # ### commands auto generated by Alembic - please adjust! ###
+    for table_name in ("principals", "groups", "resources"):
+        op.execute(f"DROP TRIGGER trg_{table_name}_set_updated_at ON {table_name}")
+    op.execute("DROP FUNCTION shepherd_set_updated_at()")
     op.drop_index(op.f("ix_leases_resource_id"), table_name="leases")
     op.drop_index(
         "ix_leases_resource_active",
@@ -252,6 +417,19 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_leases_expires_at"), table_name="leases")
     op.drop_index(op.f("ix_leases_acquired_by"), table_name="leases")
     op.drop_table("leases")
+    op.drop_index("ix_resource_group_grants_group_id", table_name="resource_group_grants")
+    op.drop_table("resource_group_grants")
+    op.drop_index(
+        "ix_resource_principal_grants_principal_id", table_name="resource_principal_grants"
+    )
+    op.drop_table("resource_principal_grants")
+    op.drop_table("password_credentials")
+    op.drop_index(op.f("ix_api_tokens_revoked_at"), table_name="api_tokens")
+    op.drop_index(op.f("ix_api_tokens_principal_id"), table_name="api_tokens")
+    op.drop_index("ix_api_tokens_principal_active", table_name="api_tokens")
+    op.drop_index(op.f("ix_api_tokens_expires_at"), table_name="api_tokens")
+    op.drop_table("api_tokens")
+    op.drop_index("ix_group_memberships_principal_id", table_name="group_memberships")
     op.drop_table("group_memberships")
     op.drop_index("ix_audit_events_subject", table_name="audit_events")
     op.drop_index("ix_audit_events_created_at", table_name="audit_events")
@@ -259,7 +437,12 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_audit_events_actor_id"), table_name="audit_events")
     op.drop_table("audit_events")
     op.drop_index(op.f("ix_resources_type"), table_name="resources")
-    op.drop_index("ix_resources_match", table_name="resources")
+    op.drop_index("ix_resources_labels_gin", table_name="resources", postgresql_using="gin")
+    op.drop_index(
+        "ix_resources_match",
+        table_name="resources",
+        postgresql_where=sa.text("archived_at IS NULL"),
+    )
     op.drop_index(op.f("ix_resources_archived_at"), table_name="resources")
     op.drop_table("resources")
     op.drop_table("principals")

@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
 
+from shepherd_rm.catalog import build_catalog_router
 from shepherd_rm.config import Settings, get_settings
 from shepherd_rm.contract import load_openapi_contract
 from shepherd_rm.database import check_database
@@ -50,6 +51,7 @@ def create_app(
     contract = load_openapi_contract(current_settings.openapi_path)
     app = ContractFastAPI(contract)
     app.include_router(build_identity_router(current_settings))
+    app.include_router(build_catalog_router(current_settings))
 
     async def default_readiness_check() -> None:
         await check_database(current_settings)

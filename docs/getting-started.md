@@ -29,4 +29,7 @@ and API tokens are managed through the `/v1` API.
 API token values are returned only when created; Shepherd RM stores only their
 SHA-256 digests.
 
-Resource management and leasing endpoints are not implemented yet.
+The `/v1/resources` API now supports authenticated resource discovery and
+administrator-managed creation, updates, lifecycle transitions, and archival.
+See {doc}`resource-catalog` for its permissions, filters, and update model.
+Resource leasing is not implemented yet.

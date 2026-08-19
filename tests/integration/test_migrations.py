@@ -8,7 +8,7 @@ import psycopg
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
 
 from shepherd_rm.config import get_settings
 from shepherd_rm.database import sqlalchemy_database_url
@@ -23,6 +23,8 @@ EXPECTED_TABLES = {
     "leases",
     "password_credentials",
     "principals",
+    "resource_group_grants",
+    "resource_principal_grants",
     "resources",
 }
 
@@ -32,7 +34,7 @@ def test_initial_migration_upgrades_and_downgrades_postgresql(
     monkeypatch: pytest.MonkeyPatch,
     integration_database_url: str,
 ) -> None:
-    """The initial migration creates the domain schema and can remove it cleanly."""
+    """The baseline creates the final schema and defaults and downgrades cleanly."""
     database_url = integration_database_url
 
     schema = f"migration_test_{uuid.uuid4().hex}"
@@ -44,11 +46,56 @@ def test_initial_migration_upgrades_and_downgrades_postgresql(
     get_settings.cache_clear()
     config = Config("alembic.ini")
     engine = create_engine(sqlalchemy_database_url(schema_url))
+    resource_id = uuid.uuid4()
 
     try:
         command.upgrade(config, "head")
-        with engine.connect() as connection:
-            assert set(inspect(connection).get_table_names()) == EXPECTED_TABLES
+        with engine.begin() as connection:
+            inspector = inspect(connection)
+            assert set(inspector.get_table_names()) == EXPECTED_TABLES
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO resources (id, name, type, sharing_mode)
+                    VALUES (:id, 'baseline-resource', 'environment', 'Exclusive')
+                    """
+                ),
+                {"id": resource_id},
+            )
+            visibility = connection.scalar(
+                text("SELECT visibility_mode FROM resources WHERE id = :id"),
+                {"id": resource_id},
+            )
+            resource_indexes = {index["name"] for index in inspector.get_indexes("resources")}
+            membership_indexes = {
+                index["name"] for index in inspector.get_indexes("group_memberships")
+            }
+            principal_grant_indexes = {
+                index["name"] for index in inspector.get_indexes("resource_principal_grants")
+            }
+            group_grant_indexes = {
+                index["name"] for index in inspector.get_indexes("resource_group_grants")
+            }
+            triggers = connection.execute(
+                text(
+                    """
+                    SELECT tgname
+                    FROM pg_trigger
+                    WHERE NOT tgisinternal AND tgname LIKE 'trg_%_set_updated_at'
+                    """
+                )
+            ).scalars()
+            trigger_names = set(triggers)
+        assert visibility == "Restricted"
+        assert {"ix_resources_match", "ix_resources_labels_gin"} <= resource_indexes
+        assert "ix_group_memberships_principal_id" in membership_indexes
+        assert "ix_resource_principal_grants_principal_id" in principal_grant_indexes
+        assert "ix_resource_group_grants_group_id" in group_grant_indexes
+        assert trigger_names == {
+            "trg_groups_set_updated_at",
+            "trg_principals_set_updated_at",
+            "trg_resources_set_updated_at",
+        }
 
         command.check(config)
         command.downgrade(config, "base")

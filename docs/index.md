@@ -7,6 +7,7 @@ Shepherd RM manages reusable resources for human users, test automation, and del
 :caption: Contents
 
 getting-started
-manual-identity-testing
+resource-catalog
+manual-testing/index
 development
 ```

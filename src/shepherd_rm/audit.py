@@ -17,8 +17,9 @@ async def record_audit_event(
     action: str,
     subject_type: str,
     subject_id: uuid.UUID,
+    metadata: dict[str, str] | None = None,
 ) -> None:
-    """Append a safe audit event in the caller's domain transaction."""
+    """Append a safe, caller-supplied audit event in the domain transaction."""
     await connection.execute(
         insert(AuditEvent).values(
             actor_id=actor_id,
@@ -26,6 +27,6 @@ async def record_audit_event(
             subject_type=subject_type,
             subject_id=str(subject_id),
             correlation_id=get_correlation_id(),
-            metadata_={},
+            metadata_=metadata or {},
         )
     )

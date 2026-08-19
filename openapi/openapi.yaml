@@ -17,6 +17,8 @@ tags:
     description: Service health and readiness
   - name: Identity
     description: Authentication and identity administration
+  - name: Resources
+    description: Resource discovery and catalog administration
 paths:
   /health:
     get:
@@ -431,6 +433,224 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
         "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources:
+    post:
+      tags: [Resources]
+      summary: Create a resource
+      operationId: createResource
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/ResourceCreate"}
+      responses:
+        "201": {$ref: "#/components/responses/Resource"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    get:
+      tags: [Resources]
+      summary: List resources matching exact criteria
+      operationId: listResources
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: type
+          in: query
+          schema: {type: string, minLength: 1, maxLength: 255}
+        - name: sharing_mode
+          in: query
+          schema: {$ref: "#/components/schemas/SharingMode"}
+        - name: operational_status
+          in: query
+          schema: {$ref: "#/components/schemas/OperationalStatus"}
+        - name: available
+          in: query
+          schema: {type: boolean}
+        - name: label
+          in: query
+          description: Repeat this parameter with key=value values for exact label matching.
+          schema:
+            type: array
+            items: {type: string}
+          style: form
+          explode: true
+        - name: include_archived
+          in: query
+          description: Include archived resources; administrator permission is required.
+          schema: {type: boolean, default: false}
+        - {$ref: "#/components/parameters/Offset"}
+        - {$ref: "#/components/parameters/Limit"}
+      responses:
+        "200": {$ref: "#/components/responses/ResourcePage"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}:
+    parameters:
+      - {$ref: "#/components/parameters/ResourceId"}
+    get:
+      tags: [Resources]
+      summary: Get a resource
+      operationId: getResource
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Resource"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    patch:
+      tags: [Resources]
+      summary: Update resource metadata
+      operationId: updateResource
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/ResourceUpdate"}
+      responses:
+        "200": {$ref: "#/components/responses/Resource"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [Resources]
+      summary: Archive a resource
+      operationId: archiveResource
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: Resource archived or already archived.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}/disable:
+    parameters: [{$ref: "#/components/parameters/ResourceId"}]
+    post:
+      tags: [Resources]
+      summary: Disable a resource
+      operationId: disableResource
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Resource"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}/enable:
+    parameters: [{$ref: "#/components/parameters/ResourceId"}]
+    post:
+      tags: [Resources]
+      summary: Enable a disabled resource
+      operationId: enableResource
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Resource"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}/quarantine:
+    parameters: [{$ref: "#/components/parameters/ResourceId"}]
+    post:
+      tags: [Resources]
+      summary: Quarantine a resource
+      operationId: quarantineResource
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Resource"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}/recover:
+    parameters: [{$ref: "#/components/parameters/ResourceId"}]
+    post:
+      tags: [Resources]
+      summary: Recover a quarantined resource
+      operationId: recoverResource
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Resource"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}/access:
+    parameters: [{$ref: "#/components/parameters/ResourceId"}]
+    get:
+      tags: [Resources]
+      summary: List resource access grants
+      operationId: getResourceAccess
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Direct principal and group grants.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ResourceAccess"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}/access/principals/{target_id}:
+    parameters:
+      - {$ref: "#/components/parameters/ResourceId"}
+      - {$ref: "#/components/parameters/AccessTargetId"}
+    put:
+      tags: [Resources]
+      summary: Grant a principal access to a restricted resource
+      operationId: grantResourcePrincipalAccess
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: The direct principal grant exists.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [Resources]
+      summary: Revoke a principal's direct resource access
+      operationId: revokeResourcePrincipalAccess
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: The direct principal grant is absent.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}/access/groups/{target_id}:
+    parameters:
+      - {$ref: "#/components/parameters/ResourceId"}
+      - {$ref: "#/components/parameters/AccessTargetId"}
+    put:
+      tags: [Resources]
+      summary: Grant a group access to a restricted resource
+      operationId: grantResourceGroupAccess
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: The group grant exists.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [Resources]
+      summary: Revoke a group's resource access
+      operationId: revokeResourceGroupAccess
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: The group grant is absent.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
 components:
   securitySchemes:
     bearerAuth:
@@ -457,6 +677,24 @@ components:
       in: path
       required: true
       schema: {type: string, format: uuid}
+    ResourceId:
+      name: resource_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    AccessTargetId:
+      name: target_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    Offset:
+      name: offset
+      in: query
+      schema: {type: integer, minimum: 0, default: 0}
+    Limit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 200, default: 50}
   requestBodies:
     Password:
       required: true
@@ -478,6 +716,16 @@ components:
       content:
         application/json:
           schema: {$ref: "#/components/schemas/TokenCreate"}
+    ResourceCreate:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ResourceCreate"}
+    ResourceUpdate:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ResourceUpdate"}
   responses:
     Unauthorized:
       description: Authentication is required or invalid.
@@ -538,12 +786,112 @@ components:
       content:
         application/json:
           schema: {$ref: "#/components/schemas/Group"}
+    Resource:
+      description: Resource details with derived availability.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Resource"}
+    ResourcePage:
+      description: A page of resources matching the supplied criteria.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ResourcePage"}
   headers:
     CorrelationId:
       description: Correlates the response with logs and traces.
       schema:
         type: string
   schemas:
+    SharingMode:
+      type: string
+      enum: [Exclusive, Shared]
+    OperationalStatus:
+      type: string
+      enum: [Active, Cleaning, Quarantined, Disabled]
+    VisibilityMode:
+      type: string
+      enum: [Public, Restricted]
+    Labels:
+      type: object
+      maxProperties: 64
+      propertyNames: {minLength: 1, maxLength: 128}
+      additionalProperties: {type: string, maxLength: 255}
+    ResourceCreate:
+      type: object
+      additionalProperties: false
+      required: [name, type, sharing_mode]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        type: {type: string, minLength: 1, maxLength: 255}
+        sharing_mode: {$ref: "#/components/schemas/SharingMode"}
+        visibility_mode:
+          allOf: [{$ref: "#/components/schemas/VisibilityMode"}]
+          default: Restricted
+        labels: {$ref: "#/components/schemas/Labels"}
+    ResourceUpdate:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: {type: integer, minimum: 1}
+        name: {type: string, minLength: 1, maxLength: 255}
+        type: {type: string, minLength: 1, maxLength: 255}
+        sharing_mode: {$ref: "#/components/schemas/SharingMode"}
+        visibility_mode: {$ref: "#/components/schemas/VisibilityMode"}
+        labels: {$ref: "#/components/schemas/Labels"}
+    Resource:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - type
+        - labels
+        - sharing_mode
+        - visibility_mode
+        - operational_status
+        - version
+        - available
+        - active_lease_count
+        - archived_at
+        - created_at
+        - updated_at
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        type: {type: string}
+        labels: {$ref: "#/components/schemas/Labels"}
+        sharing_mode: {$ref: "#/components/schemas/SharingMode"}
+        visibility_mode: {$ref: "#/components/schemas/VisibilityMode"}
+        operational_status: {$ref: "#/components/schemas/OperationalStatus"}
+        version: {type: integer, minimum: 1}
+        available: {type: boolean, readOnly: true}
+        active_lease_count: {type: integer, minimum: 0, readOnly: true}
+        archived_at: {type: [string, "null"], format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ResourcePage:
+      type: object
+      additionalProperties: false
+      required: [items, offset, limit, total]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/Resource"}
+        offset: {type: integer, minimum: 0}
+        limit: {type: integer, minimum: 1, maximum: 200}
+        total: {type: integer, minimum: 0}
+    ResourceAccess:
+      type: object
+      additionalProperties: false
+      required: [principal_ids, group_ids]
+      properties:
+        principal_ids:
+          type: array
+          items: {type: string, format: uuid}
+        group_ids:
+          type: array
+          items: {type: string, format: uuid}
     LoginRequest:
       type: object
       additionalProperties: false

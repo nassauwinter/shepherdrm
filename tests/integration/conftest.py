@@ -81,8 +81,19 @@ async def identity_environment(
         if principals_created:
             async with transaction(integration_settings) as connection:
                 await connection.execute(
-                    "DELETE FROM audit_events WHERE actor_id IN (%s, %s)",
-                    (admin_id, user_id),
+                    "DELETE FROM leases WHERE resource_id IN "
+                    "(SELECT id FROM resources WHERE name LIKE %s)",
+                    (f"%-{suffix}",),
+                )
+                await connection.execute(
+                    "DELETE FROM audit_events "
+                    "WHERE actor_id IN (SELECT id FROM principals WHERE name LIKE %s) "
+                    "OR actor_id IN (%s, %s)",
+                    (f"%-{suffix}", admin_id, user_id),
+                )
+                await connection.execute(
+                    "DELETE FROM resources WHERE name LIKE %s",
+                    (f"%-{suffix}",),
                 )
                 await connection.execute(
                     "DELETE FROM groups WHERE name LIKE %s",

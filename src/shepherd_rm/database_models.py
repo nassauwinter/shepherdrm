@@ -124,11 +124,21 @@ class Resource(TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("sharing_mode IN ('Exclusive', 'Shared')", name="sharing_mode_allowed"),
         CheckConstraint(
+            "visibility_mode IN ('Public', 'Restricted')", name="visibility_mode_allowed"
+        ),
+        CheckConstraint(
             "operational_status IN ('Active', 'Cleaning', 'Quarantined', 'Disabled')",
             name="operational_status_allowed",
         ),
         CheckConstraint("version > 0", name="version_positive"),
-        Index("ix_resources_match", "type", "sharing_mode", "operational_status"),
+        Index(
+            "ix_resources_match",
+            "type",
+            "sharing_mode",
+            "operational_status",
+            postgresql_where=text("archived_at IS NULL"),
+        ),
+        Index("ix_resources_labels_gin", "labels", postgresql_using="gin"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
@@ -136,10 +146,41 @@ class Resource(TimestampMixin, Base):
     type: Mapped[str] = mapped_column(String(255), index=True)
     labels: Mapped[dict[str, str]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     sharing_mode: Mapped[str] = mapped_column(String(16))
+    visibility_mode: Mapped[str] = mapped_column(String(16), server_default="Restricted")
     operational_status: Mapped[str] = mapped_column(String(16), server_default="Active")
     version: Mapped[int] = mapped_column(Integer, server_default="1")
     last_leased_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class ResourcePrincipalGrant(Base):
+    __tablename__ = "resource_principal_grants"
+    __table_args__ = (Index("ix_resource_principal_grants_principal_id", "principal_id"),)
+
+    resource_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("resources.id", ondelete="CASCADE"), primary_key=True
+    )
+    principal_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("principals.id", ondelete="CASCADE"), primary_key=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
+    )
+
+
+class ResourceGroupGrant(Base):
+    __tablename__ = "resource_group_grants"
+    __table_args__ = (Index("ix_resource_group_grants_group_id", "group_id"),)
+
+    resource_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("resources.id", ondelete="CASCADE"), primary_key=True
+    )
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
+    )
 
 
 class Lease(Base):

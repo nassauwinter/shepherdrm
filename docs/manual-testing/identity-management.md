@@ -1,4 +1,4 @@
-# Manual identity testing
+# Identity management smoke test
 
 This flow verifies administrator bootstrap, local login, user creation,
 authorization, and user login against a local Docker Compose deployment. It
@@ -144,13 +144,3 @@ Stop the containers while preserving the local PostgreSQL data:
 ```bash
 docker compose down
 ```
-
-For a complete reset of a disposable local installation, including the
-administrator, archived records, and audit history, remove the Compose volume:
-
-```bash
-docker compose down -v
-```
-
-This final command permanently deletes the local Shepherd RM database. Do not
-use it for an installation containing data that must be retained.

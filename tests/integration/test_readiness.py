@@ -5,11 +5,9 @@ import uuid
 import httpx
 import psycopg
 import pytest
-from alembic import command
-from alembic.config import Config
 
 from shepherd_rm.application import create_app
-from shepherd_rm.config import Settings, get_settings
+from shepherd_rm.config import Settings
 from tests.integration.support import database_url_for_schema
 
 
@@ -30,9 +28,8 @@ async def test_readiness_checks_postgresql(integration_database_url: str) -> Non
 
 @pytest.mark.anyio
 @pytest.mark.integration
-@pytest.mark.parametrize("revision", [None, "7280c6a57e19"], ids=["absent", "outdated"])
+@pytest.mark.parametrize("revision", [None, "000000000000"], ids=["absent", "outdated"])
 async def test_readiness_rejects_incompatible_schema(
-    monkeypatch: pytest.MonkeyPatch,
     integration_database_url: str,
     revision: str | None,
 ) -> None:
@@ -44,9 +41,9 @@ async def test_readiness_rejects_incompatible_schema(
     schema_url = database_url_for_schema(integration_database_url, schema)
     try:
         if revision is not None:
-            monkeypatch.setenv("SHEPHERD_DATABASE_URL", schema_url)
-            get_settings.cache_clear()
-            command.upgrade(Config("alembic.ini"), revision)
+            with psycopg.connect(schema_url, autocommit=True) as connection:
+                connection.execute("CREATE TABLE alembic_version (version_num VARCHAR(32))")
+                connection.execute("INSERT INTO alembic_version VALUES (%s)", (revision,))
 
         app = create_app(settings=Settings(database_url=schema_url))
         async with httpx.AsyncClient(
@@ -60,6 +57,5 @@ async def test_readiness_rejects_incompatible_schema(
             "PostgreSQL is unavailable or its schema is incompatible"
         )
     finally:
-        get_settings.cache_clear()
         with psycopg.connect(integration_database_url, autocommit=True) as connection:
             connection.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')

@@ -115,6 +115,37 @@ async def create_test_group(
     return uuid.UUID(response.json()["id"])
 
 
+async def create_indefinitely_leased_resource(
+    environment: IdentityEnvironment,
+    prefix: str,
+) -> uuid.UUID:
+    """Create an exclusive public resource with one unended indefinite lease."""
+    resource_id = uuid.uuid4()
+    async with transaction(environment.settings) as connection:
+        await connection.execute(
+            """
+            INSERT INTO resources (id, name, type, sharing_mode, visibility_mode)
+            VALUES (%s, %s, 'account', 'Exclusive', 'Public')
+            """,
+            (resource_id, environment.name(prefix)),
+        )
+        await connection.execute(
+            """
+            INSERT INTO leases
+                (id, resource_id, acquired_by, expires_at, idempotency_key, request_hash)
+            VALUES (%s, %s, %s, NULL, %s, %s)
+            """,
+            (
+                uuid.uuid4(),
+                resource_id,
+                environment.user_id,
+                environment.name(f"{prefix}-lease"),
+                "2" * 64,
+            ),
+        )
+    return resource_id
+
+
 def database_url_for_schema(database_url: str, schema: str) -> str:
     """Add a PostgreSQL search path without discarding existing URL parameters."""
     parts = urlsplit(database_url)

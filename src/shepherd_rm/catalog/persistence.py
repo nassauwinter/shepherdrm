@@ -19,6 +19,7 @@ from shepherd_rm.catalog.models import (
     ResourcePage,
     ResourceResponse,
     ResourceUpdate,
+    validate_expiration_policy,
 )
 from shepherd_rm.database_models import (
     Group,
@@ -31,7 +32,10 @@ from shepherd_rm.database_models import (
 )
 
 Transition = Literal["disable", "enable", "quarantine", "recover"]
-ACTIVE_LEASE = and_(Lease.ended_at.is_(None), Lease.expires_at > func.now())
+ACTIVE_LEASE = and_(
+    Lease.ended_at.is_(None),
+    or_(Lease.expires_at.is_(None), Lease.expires_at > func.now()),
+)
 
 
 def resource_visibility_predicate(principal_id: uuid.UUID) -> ColumnElement[bool]:
@@ -66,6 +70,9 @@ def resource_statement() -> Select[tuple[Any, ...]]:
             Resource.labels,
             Resource.sharing_mode,
             Resource.visibility_mode,
+            Resource.expiration_mode,
+            Resource.default_ttl_seconds,
+            Resource.max_ttl_seconds,
             Resource.operational_status,
             Resource.version,
             Resource.archived_at,
@@ -313,6 +320,14 @@ async def update_resource(
     changes = request.model_dump(exclude_unset=True, exclude={"version"})
     if not changes:
         return await fetch_resource(connection, resource_id)
+    try:
+        validate_expiration_policy(
+            changes.get("expiration_mode", target.expiration_mode),
+            changes.get("default_ttl_seconds", target.default_ttl_seconds),
+            changes.get("max_ttl_seconds", target.max_ttl_seconds),
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from None
     await connection.execute(
         update(Resource)
         .where(Resource.id == resource_id)

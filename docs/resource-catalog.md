@@ -11,6 +11,26 @@ A restricted resource is visible only through a direct principal grant or
 membership in a granted, non-archived group. Administrators can always see and
 manage every resource.
 
+## Lease expiration policy
+
+Lease timing is configured per resource rather than through a platform-wide
+minimum or maximum. Each resource exposes:
+
+- `expiration_mode`: `Required` or `Optional`;
+- `default_ttl_seconds`: a positive integer or `null`;
+- `max_ttl_seconds`: an optional positive upper bound.
+
+`Required` resources must have a default TTL. `Optional` resources may use a
+TTL default or default to indefinite leases when it is `null`. A configured
+default cannot exceed the maximum. New resources default to `Optional` with
+both TTL values set to `null`.
+
+When leasing is implemented, omitting `ttl_seconds` will use the resource
+default, an explicit positive integer will request an expiring lease, and
+explicit `null` will request an indefinite lease. Required resources reject
+indefinite requests. Only leases with an expiration participate in automatic
+expiration; indefinite leases require release or administrative revocation.
+
 All catalog requests require a bearer token. Administrators can create, update,
 archive, and change the operational state of resources. Regular users can read
 and list only visible, non-archived resources. A direct request for an
@@ -64,7 +84,8 @@ available.
 Metadata updates use `PATCH /v1/resources/{resource_id}` and must include the
 current `version` from the resource representation. A successful change
 increments the version; a stale version receives `409 Conflict` instead of
-overwriting a concurrent update.
+overwriting a concurrent update. Expiration-policy updates are validated
+against both supplied and currently stored policy fields.
 
 Operational changes use explicit action endpoints:
 

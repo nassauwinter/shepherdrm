@@ -62,10 +62,18 @@ def test_initial_migration_upgrades_and_downgrades_postgresql(
                 ),
                 {"id": resource_id},
             )
-            visibility = connection.scalar(
-                text("SELECT visibility_mode FROM resources WHERE id = :id"),
+            resource_defaults = connection.execute(
+                text(
+                    """
+                    SELECT visibility_mode, expiration_mode,
+                           default_ttl_seconds, max_ttl_seconds
+                    FROM resources
+                    WHERE id = :id
+                    """
+                ),
                 {"id": resource_id},
-            )
+            ).one()
+            lease_columns = {column["name"]: column for column in inspector.get_columns("leases")}
             resource_indexes = {index["name"] for index in inspector.get_indexes("resources")}
             membership_indexes = {
                 index["name"] for index in inspector.get_indexes("group_memberships")
@@ -86,7 +94,8 @@ def test_initial_migration_upgrades_and_downgrades_postgresql(
                 )
             ).scalars()
             trigger_names = set(triggers)
-        assert visibility == "Restricted"
+        assert resource_defaults == ("Restricted", "Optional", None, None)
+        assert lease_columns["expires_at"]["nullable"] is True
         assert {"ix_resources_match", "ix_resources_labels_gin"} <= resource_indexes
         assert "ix_group_memberships_principal_id" in membership_indexes
         assert "ix_resource_principal_grants_principal_id" in principal_grant_indexes

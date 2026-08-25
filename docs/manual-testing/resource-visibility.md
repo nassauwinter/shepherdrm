@@ -115,7 +115,12 @@ RESOURCE=$(
       }')"
 )
 RESOURCE_ID=$(jq -er '.id' <<<"$RESOURCE")
-jq -e '.visibility_mode == "Restricted"' <<<"$RESOURCE"
+jq -e '
+  .visibility_mode == "Restricted" and
+  .expiration_mode == "Optional" and
+  .default_ttl_seconds == null and
+  .max_ttl_seconds == null
+' <<<"$RESOURCE"
 ```
 
 Before any grant, both users receive HTTP `404` and cannot discover the

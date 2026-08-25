@@ -95,6 +95,9 @@ RESOURCE=$(
         type: "environment",
         sharing_mode: "Exclusive",
         visibility_mode: "Public",
+        expiration_mode: "Required",
+        default_ttl_seconds: 3600,
+        max_ttl_seconds: 86400,
         labels: {purpose: "manual-smoke-test", region: "local", run_id: $run_id}
       }')"
 )
@@ -103,6 +106,9 @@ RESOURCE_VERSION=$(jq -er '.version' <<<"$RESOURCE")
 jq -e '
   .operational_status == "Active" and
   .visibility_mode == "Public" and
+  .expiration_mode == "Required" and
+  .default_ttl_seconds == 3600 and
+  .max_ttl_seconds == 86400 and
   .available == true and
   .active_lease_count == 0
 ' <<<"$RESOURCE"

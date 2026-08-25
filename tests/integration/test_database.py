@@ -123,3 +123,48 @@ async def test_raw_updates_advance_updated_at(integration_settings: Settings) ->
     finally:
         async with transaction(integration_settings) as connection:
             await connection.execute("DELETE FROM resources WHERE id = %s", (resource_id,))
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("expiration_mode", "default_ttl", "max_ttl"),
+    [
+        ("Required", None, None),
+        ("Optional", 0, None),
+        ("Optional", None, 0),
+        ("Optional", 7200, 3600),
+    ],
+    ids=[
+        "required-without-default",
+        "non-positive-default",
+        "non-positive-maximum",
+        "default-above-maximum",
+    ],
+)
+async def test_database_rejects_invalid_resource_expiration_policy(
+    integration_settings: Settings,
+    expiration_mode: str,
+    default_ttl: int | None,
+    max_ttl: int | None,
+) -> None:
+    """Database constraints protect expiration policy invariants outside the HTTP API."""
+    resource_id = uuid.uuid4()
+
+    with pytest.raises(psycopg.errors.CheckViolation):
+        async with transaction(integration_settings) as connection:
+            await connection.execute(
+                """
+                INSERT INTO resources
+                    (id, name, type, sharing_mode, expiration_mode,
+                     default_ttl_seconds, max_ttl_seconds)
+                VALUES (%s, %s, 'environment', 'Exclusive', %s, %s, %s)
+                """,
+                (
+                    resource_id,
+                    f"invalid-policy-{resource_id}",
+                    expiration_mode,
+                    default_ttl,
+                    max_ttl,
+                ),
+            )

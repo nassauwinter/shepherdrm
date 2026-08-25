@@ -17,6 +17,7 @@ from shepherd_rm.database import transaction
 from tests.integration.support import (
     IdentityEnvironment,
     create_authenticated_test_user,
+    create_indefinitely_leased_resource,
     create_test_group,
     create_test_resource,
     grant_resource_with_backend_pid,
@@ -81,8 +82,113 @@ async def test_administrator_can_create_a_resource(
 
     assert response.status_code == 201
     assert response.json()["visibility_mode"] == "Restricted"
+    assert response.json()["expiration_mode"] == "Optional"
+    assert response.json()["default_ttl_seconds"] is None
+    assert response.json()["max_ttl_seconds"] is None
     assert response.json()["available"] is True
     assert response.json()["active_lease_count"] == 0
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_administrator_configures_resource_expiration_policy(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """Resource creation and updates persist a valid resource-specific TTL policy."""
+    headers = identity_environment.authorization("admin")
+    created = await identity_client.post(
+        "/v1/resources",
+        headers=headers,
+        json={
+            "name": identity_environment.name("expiration-policy"),
+            "type": "environment",
+            "sharing_mode": "Exclusive",
+            "expiration_mode": "Required",
+            "default_ttl_seconds": 1800,
+            "max_ttl_seconds": 7200,
+        },
+    )
+    assert created.status_code == 201
+    resource = created.json()
+    assert resource["expiration_mode"] == "Required"
+    assert resource["default_ttl_seconds"] == 1800
+    assert resource["max_ttl_seconds"] == 7200
+
+    updated = await identity_client.patch(
+        f"/v1/resources/{resource['id']}",
+        headers=headers,
+        json={
+            "version": resource["version"],
+            "expiration_mode": "Optional",
+            "default_ttl_seconds": None,
+            "max_ttl_seconds": None,
+        },
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["expiration_mode"] == "Optional"
+    assert updated.json()["default_ttl_seconds"] is None
+    assert updated.json()["max_ttl_seconds"] is None
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "policy",
+    [
+        {"expiration_mode": "Required", "default_ttl_seconds": None},
+        {"default_ttl_seconds": 7200, "max_ttl_seconds": 3600},
+    ],
+    ids=["required-without-default", "default-above-maximum"],
+)
+async def test_resource_creation_rejects_invalid_expiration_policy(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+    policy: dict[str, object],
+) -> None:
+    """Creation rejects expiration policies that cannot produce a valid lease TTL."""
+    response = await identity_client.post(
+        "/v1/resources",
+        headers=identity_environment.authorization("admin"),
+        json={
+            "name": identity_environment.name(f"invalid-policy-{uuid.uuid4().hex}"),
+            "type": "environment",
+            "sharing_mode": "Exclusive",
+            **policy,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_resource_update_rejects_policy_conflicting_with_stored_values(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """A partial policy update cannot make the stored default exceed its maximum."""
+    headers = identity_environment.authorization("admin")
+    created = await identity_client.post(
+        "/v1/resources",
+        headers=headers,
+        json={
+            "name": identity_environment.name("conflicting-policy-update"),
+            "type": "environment",
+            "sharing_mode": "Exclusive",
+            "default_ttl_seconds": 3600,
+        },
+    )
+    assert created.status_code == 201
+
+    response = await identity_client.patch(
+        f"/v1/resources/{created.json()['id']}",
+        headers=headers,
+        json={"version": created.json()["version"], "max_ttl_seconds": 1800},
+    )
+
+    assert response.status_code == 409
 
 
 @pytest.mark.anyio
@@ -744,7 +850,10 @@ async def test_resource_list_uses_stable_pagination_order(
 
 @pytest.mark.anyio
 @pytest.mark.integration
-@pytest.mark.parametrize("field", ["name", "type", "sharing_mode", "visibility_mode", "labels"])
+@pytest.mark.parametrize(
+    "field",
+    ["name", "type", "sharing_mode", "visibility_mode", "expiration_mode", "labels"],
+)
 async def test_resource_updates_reject_explicit_null_fields(
     identity_environment: IdentityEnvironment,
     identity_client: httpx.AsyncClient,
@@ -853,6 +962,62 @@ async def test_availability_is_derived_from_mode_state_and_active_leases(
     assert response.status_code == 200
     assert response.json()["active_lease_count"] == 1
     assert response.json()["available"] is (sharing_mode == "Shared")
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_indefinite_lease_counts_as_active(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """An unended lease without an expiration contributes to the active lease count."""
+    resource_id = await create_indefinitely_leased_resource(
+        identity_environment, "indefinite-active-count"
+    )
+
+    response = await identity_client.get(
+        f"/v1/resources/{resource_id}", headers=identity_environment.authorization("user")
+    )
+
+    assert response.status_code == 200
+    assert response.json()["active_lease_count"] == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_indefinite_lease_consumes_exclusive_resource(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """An exclusive resource with an unended indefinite lease is unavailable."""
+    resource_id = await create_indefinitely_leased_resource(
+        identity_environment, "indefinite-exclusive"
+    )
+
+    response = await identity_client.get(
+        f"/v1/resources/{resource_id}", headers=identity_environment.authorization("user")
+    )
+
+    assert response.status_code == 200
+    assert response.json()["available"] is False
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_indefinite_lease_prevents_resource_archival(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """Archival is rejected while a resource has an unended indefinite lease."""
+    resource_id = await create_indefinitely_leased_resource(
+        identity_environment, "indefinite-archive-guard"
+    )
+
+    response = await identity_client.delete(
+        f"/v1/resources/{resource_id}", headers=identity_environment.authorization("admin")
+    )
+
+    assert response.status_code == 409
 
 
 @pytest.mark.anyio

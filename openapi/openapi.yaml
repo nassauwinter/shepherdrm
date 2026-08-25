@@ -811,6 +811,9 @@ components:
     VisibilityMode:
       type: string
       enum: [Public, Restricted]
+    ExpirationMode:
+      type: string
+      enum: [Required, Optional]
     Labels:
       type: object
       maxProperties: 64
@@ -827,6 +830,11 @@ components:
         visibility_mode:
           allOf: [{$ref: "#/components/schemas/VisibilityMode"}]
           default: Restricted
+        expiration_mode:
+          allOf: [{$ref: "#/components/schemas/ExpirationMode"}]
+          default: Optional
+        default_ttl_seconds: {type: [integer, "null"], minimum: 1, default: null}
+        max_ttl_seconds: {type: [integer, "null"], minimum: 1, default: null}
         labels: {$ref: "#/components/schemas/Labels"}
     ResourceUpdate:
       type: object
@@ -838,6 +846,9 @@ components:
         type: {type: string, minLength: 1, maxLength: 255}
         sharing_mode: {$ref: "#/components/schemas/SharingMode"}
         visibility_mode: {$ref: "#/components/schemas/VisibilityMode"}
+        expiration_mode: {$ref: "#/components/schemas/ExpirationMode"}
+        default_ttl_seconds: {type: [integer, "null"], minimum: 1}
+        max_ttl_seconds: {type: [integer, "null"], minimum: 1}
         labels: {$ref: "#/components/schemas/Labels"}
     Resource:
       type: object
@@ -849,6 +860,9 @@ components:
         - labels
         - sharing_mode
         - visibility_mode
+        - expiration_mode
+        - default_ttl_seconds
+        - max_ttl_seconds
         - operational_status
         - version
         - available
@@ -863,6 +877,9 @@ components:
         labels: {$ref: "#/components/schemas/Labels"}
         sharing_mode: {$ref: "#/components/schemas/SharingMode"}
         visibility_mode: {$ref: "#/components/schemas/VisibilityMode"}
+        expiration_mode: {$ref: "#/components/schemas/ExpirationMode"}
+        default_ttl_seconds: {type: [integer, "null"], minimum: 1}
+        max_ttl_seconds: {type: [integer, "null"], minimum: 1}
         operational_status: {$ref: "#/components/schemas/OperationalStatus"}
         version: {type: integer, minimum: 1}
         available: {type: boolean, readOnly: true}

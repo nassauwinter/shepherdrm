@@ -81,6 +81,11 @@ def upgrade() -> None:
             "visibility_mode", sa.String(length=16), server_default="Restricted", nullable=False
         ),
         sa.Column(
+            "expiration_mode", sa.String(length=16), server_default="Optional", nullable=False
+        ),
+        sa.Column("default_ttl_seconds", sa.Integer(), nullable=True),
+        sa.Column("max_ttl_seconds", sa.Integer(), nullable=True),
+        sa.Column(
             "operational_status", sa.String(length=16), server_default="Active", nullable=False
         ),
         sa.Column("version", sa.Integer(), server_default="1", nullable=False),
@@ -109,6 +114,27 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "visibility_mode IN ('Public', 'Restricted')",
             name=op.f("ck_resources_visibility_mode_allowed"),
+        ),
+        sa.CheckConstraint(
+            "expiration_mode IN ('Required', 'Optional')",
+            name=op.f("ck_resources_expiration_mode_allowed"),
+        ),
+        sa.CheckConstraint(
+            "default_ttl_seconds IS NULL OR default_ttl_seconds > 0",
+            name=op.f("ck_resources_default_ttl_positive"),
+        ),
+        sa.CheckConstraint(
+            "max_ttl_seconds IS NULL OR max_ttl_seconds > 0",
+            name=op.f("ck_resources_max_ttl_positive"),
+        ),
+        sa.CheckConstraint(
+            "default_ttl_seconds IS NULL OR max_ttl_seconds IS NULL "
+            "OR default_ttl_seconds <= max_ttl_seconds",
+            name=op.f("ck_resources_default_ttl_within_maximum"),
+        ),
+        sa.CheckConstraint(
+            "expiration_mode = 'Optional' OR default_ttl_seconds IS NOT NULL",
+            name=op.f("ck_resources_required_expiration_has_default"),
         ),
         sa.CheckConstraint("version > 0", name=op.f("ck_resources_version_positive")),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_resources")),
@@ -327,7 +353,7 @@ def upgrade() -> None:
             server_default=sa.text("CURRENT_TIMESTAMP"),
             nullable=False,
         ),
-        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_renewed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("ended_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("end_reason", sa.String(length=16), nullable=True),
@@ -349,7 +375,8 @@ def upgrade() -> None:
             name=op.f("ck_leases_terminal_fields_consistent"),
         ),
         sa.CheckConstraint(
-            "expires_at > acquired_at", name=op.f("ck_leases_expiration_after_acquisition")
+            "expires_at IS NULL OR expires_at > acquired_at",
+            name=op.f("ck_leases_expiration_after_acquisition"),
         ),
         sa.ForeignKeyConstraint(
             ["acquired_by"],

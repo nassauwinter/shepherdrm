@@ -127,6 +127,23 @@ class Resource(TimestampMixin, Base):
             "visibility_mode IN ('Public', 'Restricted')", name="visibility_mode_allowed"
         ),
         CheckConstraint(
+            "expiration_mode IN ('Required', 'Optional')", name="expiration_mode_allowed"
+        ),
+        CheckConstraint(
+            "default_ttl_seconds IS NULL OR default_ttl_seconds > 0",
+            name="default_ttl_positive",
+        ),
+        CheckConstraint("max_ttl_seconds IS NULL OR max_ttl_seconds > 0", name="max_ttl_positive"),
+        CheckConstraint(
+            "default_ttl_seconds IS NULL OR max_ttl_seconds IS NULL "
+            "OR default_ttl_seconds <= max_ttl_seconds",
+            name="default_ttl_within_maximum",
+        ),
+        CheckConstraint(
+            "expiration_mode = 'Optional' OR default_ttl_seconds IS NOT NULL",
+            name="required_expiration_has_default",
+        ),
+        CheckConstraint(
             "operational_status IN ('Active', 'Cleaning', 'Quarantined', 'Disabled')",
             name="operational_status_allowed",
         ),
@@ -147,6 +164,9 @@ class Resource(TimestampMixin, Base):
     labels: Mapped[dict[str, str]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     sharing_mode: Mapped[str] = mapped_column(String(16))
     visibility_mode: Mapped[str] = mapped_column(String(16), server_default="Restricted")
+    expiration_mode: Mapped[str] = mapped_column(String(16), server_default="Optional")
+    default_ttl_seconds: Mapped[int | None] = mapped_column(Integer)
+    max_ttl_seconds: Mapped[int | None] = mapped_column(Integer)
     operational_status: Mapped[str] = mapped_column(String(16), server_default="Active")
     version: Mapped[int] = mapped_column(Integer, server_default="1")
     last_leased_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -186,7 +206,10 @@ class ResourceGroupGrant(Base):
 class Lease(Base):
     __tablename__ = "leases"
     __table_args__ = (
-        CheckConstraint("expires_at > acquired_at", name="expiration_after_acquisition"),
+        CheckConstraint(
+            "expires_at IS NULL OR expires_at > acquired_at",
+            name="expiration_after_acquisition",
+        ),
         CheckConstraint(
             "(ended_at IS NULL AND end_reason IS NULL) OR "
             "(ended_at IS NOT NULL AND end_reason IS NOT NULL)",
@@ -213,7 +236,7 @@ class Lease(Base):
     acquired_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
     )
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     last_renewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     end_reason: Mapped[str | None] = mapped_column(String(16))

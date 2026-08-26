@@ -19,6 +19,7 @@ from shepherd_rm.config import Settings, get_settings
 from shepherd_rm.contract import load_openapi_contract
 from shepherd_rm.database import check_database
 from shepherd_rm.identity.api import build_identity_router
+from shepherd_rm.leasing import build_leasing_router
 from shepherd_rm.logging import configure_logging
 from shepherd_rm.models import HealthResponse, Problem, ReadinessResponse
 from shepherd_rm.request_context import reset_correlation_id, set_correlation_id
@@ -52,6 +53,7 @@ def create_app(
     app = ContractFastAPI(contract)
     app.include_router(build_identity_router(current_settings))
     app.include_router(build_catalog_router(current_settings))
+    app.include_router(build_leasing_router(current_settings))
 
     async def default_readiness_check() -> None:
         await check_database(current_settings)

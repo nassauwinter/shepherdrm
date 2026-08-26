@@ -32,4 +32,6 @@ SHA-256 digests.
 The `/v1/resources` API now supports authenticated resource discovery and
 administrator-managed creation, updates, lifecycle transitions, and archival.
 See {doc}`resource-catalog` for its permissions, filters, and update model.
-Resource leasing is not implemented yet.
+The `/v1/leases` API supports visibility-aware acquisition, listing, renewal,
+release, and administrative revocation. A separate worker expires finite leases;
+see {doc}`manual-testing/leasing` for a complete manual flow.

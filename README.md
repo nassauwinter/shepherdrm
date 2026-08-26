@@ -91,4 +91,7 @@ administration, revocable API tokens, and an authenticated resource catalog.
 Administrators can manage exclusive and shared resources while users can
 discover public or explicitly granted resources by type, labels, state, sharing
 mode, and availability. Restricted resources support direct-principal and group
-access grants. Core leasing is the next implementation milestone.
+access grants. Users and pipelines can acquire matching resources with
+principal-scoped idempotency, then list, renew, and release their leases;
+administrators can inspect and revoke any lease. The Compose worker expires
+bounded batches of leases with finite TTLs while indefinite leases remain active.

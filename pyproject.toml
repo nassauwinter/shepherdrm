@@ -22,6 +22,7 @@ dependencies = [
 [project.scripts]
 shepherd-rm = "shepherd_rm.main:run"
 shepherd-rm-bootstrap-admin = "shepherd_rm.identity.bootstrap:run"
+shepherd-rm-worker = "shepherd_rm.leasing.worker:run"
 
 [dependency-groups]
 dev = [

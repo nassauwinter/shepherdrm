@@ -13,7 +13,7 @@ from shepherd_rm.request_context import get_correlation_id
 
 async def record_audit_event(
     connection: AsyncConnection,
-    actor_id: uuid.UUID,
+    actor_id: uuid.UUID | None,
     action: str,
     subject_type: str,
     subject_id: uuid.UUID,

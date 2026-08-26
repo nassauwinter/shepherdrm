@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://shepherd_rm:shepherd_rm_local@localhost:5432/shepherd_rm"
     database_connect_timeout_seconds: int = Field(default=5, ge=1)
     login_token_ttl_seconds: int = Field(default=43_200, ge=60)
+    lease_expiration_poll_seconds: float = Field(default=1.0, gt=0)
+    lease_expiration_batch_size: int = Field(default=100, ge=1, le=1000)
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
     log_level: str = "INFO"

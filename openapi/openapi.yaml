@@ -651,6 +651,110 @@ paths:
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
         "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/leases:
+    post:
+      tags: [Leases]
+      summary: Acquire a matching visible resource
+      operationId: acquireLease
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 255}
+      requestBody: {$ref: "#/components/requestBodies/LeaseCreate"}
+      responses:
+        "201": {$ref: "#/components/responses/Lease"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    get:
+      tags: [Leases]
+      summary: List authorized leases
+      operationId: listLeases
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: resource_id
+          in: query
+          schema: {type: string, format: uuid}
+        - name: state
+          in: query
+          schema: {$ref: "#/components/schemas/LeaseState"}
+        - name: acquired_by
+          in: query
+          schema: {type: string, format: uuid}
+        - name: consumer
+          in: query
+          schema: {type: string, minLength: 1, maxLength: 500}
+        - name: acquired_after
+          in: query
+          schema: {type: string, format: date-time}
+        - name: acquired_before
+          in: query
+          schema: {type: string, format: date-time}
+        - name: expires_after
+          in: query
+          schema: {type: string, format: date-time}
+        - name: expires_before
+          in: query
+          schema: {type: string, format: date-time}
+        - {$ref: "#/components/parameters/Offset"}
+        - {$ref: "#/components/parameters/Limit"}
+      responses:
+        "200": {$ref: "#/components/responses/LeasePage"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/leases/{lease_id}:
+    parameters: [{$ref: "#/components/parameters/LeaseId"}]
+    get:
+      tags: [Leases]
+      summary: Get an authorized lease
+      operationId: getLease
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Lease"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/leases/{lease_id}/renew:
+    parameters: [{$ref: "#/components/parameters/LeaseId"}]
+    post:
+      tags: [Leases]
+      summary: Renew an active owned lease
+      operationId: renewLease
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/LeaseRenew"}
+      responses:
+        "200": {$ref: "#/components/responses/Lease"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/leases/{lease_id}/release:
+    parameters: [{$ref: "#/components/parameters/LeaseId"}]
+    post:
+      tags: [Leases]
+      summary: Release an owned lease
+      operationId: releaseLease
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Lease"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/leases/{lease_id}/revoke:
+    parameters: [{$ref: "#/components/parameters/LeaseId"}]
+    post:
+      tags: [Leases]
+      summary: Administratively revoke a lease
+      operationId: revokeLease
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Lease"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
 components:
   securitySchemes:
     bearerAuth:
@@ -679,6 +783,11 @@ components:
       schema: {type: string, format: uuid}
     ResourceId:
       name: resource_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    LeaseId:
+      name: lease_id
       in: path
       required: true
       schema: {type: string, format: uuid}
@@ -726,6 +835,16 @@ components:
       content:
         application/json:
           schema: {$ref: "#/components/schemas/ResourceUpdate"}
+    LeaseCreate:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/LeaseCreate"}
+    LeaseRenew:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/LeaseRenew"}
   responses:
     Unauthorized:
       description: Authentication is required or invalid.
@@ -756,7 +875,7 @@ components:
         application/problem+json:
           schema: {$ref: "#/components/schemas/Problem"}
     Conflict:
-      description: The request conflicts with the current identity state.
+      description: The request conflicts with the current system state.
       headers:
         x-correlation-id: {$ref: "#/components/headers/CorrelationId"}
       content:
@@ -796,6 +915,16 @@ components:
       content:
         application/json:
           schema: {$ref: "#/components/schemas/ResourcePage"}
+    Lease:
+      description: Lease details and the selected resource.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Lease"}
+    LeasePage:
+      description: A page of leases visible to the authenticated principal.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/LeasePage"}
   headers:
     CorrelationId:
       description: Correlates the response with logs and traces.
@@ -833,8 +962,8 @@ components:
         expiration_mode:
           allOf: [{$ref: "#/components/schemas/ExpirationMode"}]
           default: Optional
-        default_ttl_seconds: {type: [integer, "null"], minimum: 1, default: null}
-        max_ttl_seconds: {type: [integer, "null"], minimum: 1, default: null}
+        default_ttl_seconds: {type: [integer, "null"], minimum: 1, maximum: 2147483647, default: null}
+        max_ttl_seconds: {type: [integer, "null"], minimum: 1, maximum: 2147483647, default: null}
         labels: {$ref: "#/components/schemas/Labels"}
     ResourceUpdate:
       type: object
@@ -847,8 +976,8 @@ components:
         sharing_mode: {$ref: "#/components/schemas/SharingMode"}
         visibility_mode: {$ref: "#/components/schemas/VisibilityMode"}
         expiration_mode: {$ref: "#/components/schemas/ExpirationMode"}
-        default_ttl_seconds: {type: [integer, "null"], minimum: 1}
-        max_ttl_seconds: {type: [integer, "null"], minimum: 1}
+        default_ttl_seconds: {type: [integer, "null"], minimum: 1, maximum: 2147483647}
+        max_ttl_seconds: {type: [integer, "null"], minimum: 1, maximum: 2147483647}
         labels: {$ref: "#/components/schemas/Labels"}
     Resource:
       type: object
@@ -878,8 +1007,8 @@ components:
         sharing_mode: {$ref: "#/components/schemas/SharingMode"}
         visibility_mode: {$ref: "#/components/schemas/VisibilityMode"}
         expiration_mode: {$ref: "#/components/schemas/ExpirationMode"}
-        default_ttl_seconds: {type: [integer, "null"], minimum: 1}
-        max_ttl_seconds: {type: [integer, "null"], minimum: 1}
+        default_ttl_seconds: {type: [integer, "null"], minimum: 1, maximum: 2147483647}
+        max_ttl_seconds: {type: [integer, "null"], minimum: 1, maximum: 2147483647}
         operational_status: {$ref: "#/components/schemas/OperationalStatus"}
         version: {type: integer, minimum: 1}
         available: {type: boolean, readOnly: true}
@@ -909,6 +1038,75 @@ components:
         group_ids:
           type: array
           items: {type: string, format: uuid}
+    LeaseState:
+      type: string
+      enum: [Active, Released, Expired, Revoked]
+    LeaseCreate:
+      type: object
+      additionalProperties: false
+      required: [resource_type, sharing_mode]
+      properties:
+        resource_type: {type: string, minLength: 1, maxLength: 255}
+        sharing_mode: {$ref: "#/components/schemas/SharingMode"}
+        labels: {$ref: "#/components/schemas/Labels"}
+        ttl_seconds:
+          description: Omit for the resource default; null explicitly requests no expiration.
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 2147483647
+        consumer: {type: [string, "null"], minLength: 1, maxLength: 500}
+        metadata: {type: object, additionalProperties: true}
+    LeaseRenew:
+      type: object
+      additionalProperties: false
+      properties:
+        ttl_seconds:
+          description: Omit for the resource default; null explicitly requests no expiration.
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 2147483647
+    Lease:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - resource
+        - acquired_by
+        - consumer
+        - state
+        - acquired_at
+        - expires_at
+        - last_renewed_at
+        - ended_at
+        - end_reason
+        - duration_seconds
+        - metadata
+      properties:
+        id: {type: string, format: uuid}
+        resource: {$ref: "#/components/schemas/Resource"}
+        acquired_by: {type: string, format: uuid}
+        consumer: {type: [string, "null"]}
+        state: {$ref: "#/components/schemas/LeaseState"}
+        acquired_at: {type: string, format: date-time}
+        expires_at: {type: [string, "null"], format: date-time}
+        last_renewed_at: {type: [string, "null"], format: date-time}
+        ended_at: {type: [string, "null"], format: date-time}
+        end_reason:
+          type: [string, "null"]
+          enum: [Released, Expired, Revoked, null]
+        duration_seconds: {type: number, minimum: 0, readOnly: true}
+        metadata: {type: object, additionalProperties: true}
+    LeasePage:
+      type: object
+      additionalProperties: false
+      required: [items, offset, limit, total]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/Lease"}
+        offset: {type: integer, minimum: 0}
+        limit: {type: integer, minimum: 1, maximum: 200}
+        total: {type: integer, minimum: 0}
     LoginRequest:
       type: object
       additionalProperties: false

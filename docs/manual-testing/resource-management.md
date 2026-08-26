@@ -4,8 +4,8 @@ This flow verifies resource creation, public discovery, authorization,
 optimistic updates, operational transitions, and archival through the public
 API. It requires `curl` and `jq`.
 
-Resource leasing is not implemented yet, so this walkthrough verifies catalog
-availability only for a resource with no active leases. See
+This walkthrough focuses on catalog availability for a resource with no active
+leases. See
 {doc}`resource-visibility` for restricted resources and access grants.
 
 ## Start the service

@@ -3,7 +3,8 @@
 The resource catalog stores the allocatable accounts, devices, environments,
 and other items managed by Shepherd RM. Every resource explicitly uses either
 `Exclusive` or `Shared` sharing mode. The catalog reports availability, but
-lease acquisition will be introduced by the core-leasing milestone.
+lease acquisition always requests one of these modes explicitly and never
+substitutes one for the other.
 
 Every resource also has a visibility mode. New resources default to
 `Restricted`; `Public` resources are visible to every authenticated principal.
@@ -25,7 +26,7 @@ TTL default or default to indefinite leases when it is `null`. A configured
 default cannot exceed the maximum. New resources default to `Optional` with
 both TTL values set to `null`.
 
-When leasing is implemented, omitting `ttl_seconds` will use the resource
+When acquiring a lease, omitting `ttl_seconds` uses the resource
 default, an explicit positive integer will request an expiring lease, and
 explicit `null` will request an indefinite lease. Required resources reject
 indefinite requests. Only leases with an expiration participate in automatic

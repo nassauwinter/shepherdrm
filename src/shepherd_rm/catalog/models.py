@@ -14,7 +14,8 @@ VisibilityMode = Literal["Public", "Restricted"]
 ExpirationMode = Literal["Required", "Optional"]
 ResourceName = Annotated[str, Field(min_length=1, max_length=255)]
 ResourceType = Annotated[str, Field(min_length=1, max_length=255)]
-TtlSeconds = Annotated[int, Field(ge=1)]
+MAX_TTL_SECONDS = 2_147_483_647
+TtlSeconds = Annotated[int, Field(strict=True, ge=1, le=MAX_TTL_SECONDS)]
 
 
 def validate_expiration_policy(

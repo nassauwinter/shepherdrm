@@ -639,6 +639,46 @@ async def test_removing_group_membership_removes_resource_visibility(
 
 @pytest.mark.anyio
 @pytest.mark.integration
+async def test_revoking_group_grant_removes_inherited_resource_visibility(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """Revoking a group grant immediately hides the resource from active members."""
+    headers = identity_environment.authorization("admin")
+    group_id = await create_test_group(identity_client, identity_environment, "revoked-group")
+    membership = await identity_client.put(
+        f"/v1/groups/{group_id}/members/{identity_environment.user_id}", headers=headers
+    )
+    assert membership.status_code == 204
+    resource = await create_test_resource(
+        identity_client, identity_environment, "revoked-group-resource"
+    )
+    granted = await identity_client.put(
+        f"/v1/resources/{resource['id']}/access/groups/{group_id}", headers=headers
+    )
+    assert granted.status_code == 204
+    visible = await identity_client.get(
+        f"/v1/resources/{resource['id']}",
+        headers=identity_environment.authorization("user"),
+    )
+    assert visible.status_code == 200
+
+    revoked = await identity_client.delete(
+        f"/v1/resources/{resource['id']}/access/groups/{group_id}", headers=headers
+    )
+    assert revoked.status_code == 204
+    grants = await identity_client.get(f"/v1/resources/{resource['id']}/access", headers=headers)
+    assert grants.status_code == 200
+    assert str(group_id) not in grants.json()["group_ids"]
+    hidden = await identity_client.get(
+        f"/v1/resources/{resource['id']}",
+        headers=identity_environment.authorization("user"),
+    )
+    assert hidden.status_code == 404
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
 async def test_archived_group_no_longer_provides_resource_visibility(
     identity_environment: IdentityEnvironment,
     identity_client: httpx.AsyncClient,

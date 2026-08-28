@@ -77,6 +77,97 @@ async def test_login_token_identifies_the_authenticated_user(
 
 @pytest.mark.anyio
 @pytest.mark.integration
+async def test_password_change_replaces_the_users_login_credential(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """Changing a password rejects the old value and accepts the replacement."""
+    new_password = "replacement-user-password"
+    changed = await identity_client.put(
+        "/v1/me/password",
+        headers=identity_environment.authorization("user"),
+        json={"password": new_password},
+    )
+    assert changed.status_code == 204
+
+    old_login = await identity_client.post(
+        "/v1/auth/login",
+        json={
+            "username": identity_environment.name("user"),
+            "password": "regular-user-password",
+        },
+    )
+    assert old_login.status_code == 401
+    new_login = await identity_client.post(
+        "/v1/auth/login",
+        json={"username": identity_environment.name("user"), "password": new_password},
+    )
+    assert new_login.status_code == 200
+
+    authenticated = await identity_client.get(
+        "/v1/me",
+        headers={"Authorization": f"Bearer {new_login.json()['access_token']}"},
+    )
+    assert authenticated.status_code == 200
+    assert authenticated.json()["id"] == str(identity_environment.user_id)
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_personal_token_lifecycle_enforces_ownership_and_revocation(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """A personal token is shown once, owner-revocable, and unusable after revocation."""
+    user_headers = identity_environment.authorization("user")
+    created = await identity_client.post(
+        "/v1/me/api-tokens",
+        headers=user_headers,
+        json={"name": "personal-automation"},
+    )
+    assert created.status_code == 201
+    token_payload = created.json()
+    personal_token = token_payload["token"]
+
+    listed = await identity_client.get("/v1/me/api-tokens", headers=user_headers)
+    assert listed.status_code == 200
+    listed_token = next(item for item in listed.json() if item["id"] == token_payload["id"])
+    assert "token" not in listed_token
+    assert listed_token["revoked_at"] is None
+
+    authenticated = await identity_client.get(
+        "/v1/me", headers={"Authorization": f"Bearer {personal_token}"}
+    )
+    assert authenticated.status_code == 200
+    assert authenticated.json()["id"] == str(identity_environment.user_id)
+
+    denied = await identity_client.delete(
+        f"/v1/me/api-tokens/{token_payload['id']}",
+        headers=identity_environment.authorization("admin"),
+    )
+    assert denied.status_code == 404
+    still_authenticated = await identity_client.get(
+        "/v1/me", headers={"Authorization": f"Bearer {personal_token}"}
+    )
+    assert still_authenticated.status_code == 200
+
+    revoked = await identity_client.delete(
+        f"/v1/me/api-tokens/{token_payload['id']}", headers=user_headers
+    )
+    assert revoked.status_code == 204
+    rejected = await identity_client.get(
+        "/v1/me", headers={"Authorization": f"Bearer {personal_token}"}
+    )
+    assert rejected.status_code == 401
+
+    relisted = await identity_client.get("/v1/me/api-tokens", headers=user_headers)
+    assert relisted.status_code == 200
+    revoked_token = next(item for item in relisted.json() if item["id"] == token_payload["id"])
+    assert revoked_token["revoked_at"] is not None
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
 async def test_service_token_is_shown_once_and_rejected_after_revocation(
     identity_environment: IdentityEnvironment,
     identity_client: httpx.AsyncClient,
@@ -135,6 +226,67 @@ async def test_service_token_is_shown_once_and_rejected_after_revocation(
 
 @pytest.mark.anyio
 @pytest.mark.integration
+async def test_administrator_can_manage_a_service_identity_lifecycle(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """Service discovery, update, and archive expose state and disable its token."""
+    headers = identity_environment.authorization("admin")
+    created = await identity_client.post(
+        "/v1/service-identities",
+        headers=headers,
+        json={
+            "name": identity_environment.name("managed-service"),
+            "display_name": "Managed service",
+        },
+    )
+    assert created.status_code == 201
+    service_id = created.json()["id"]
+
+    listed = await identity_client.get("/v1/service-identities", headers=headers)
+    assert listed.status_code == 200
+    assert service_id in {item["id"] for item in listed.json()}
+
+    retrieved = await identity_client.get(f"/v1/service-identities/{service_id}", headers=headers)
+    assert retrieved.status_code == 200
+    assert retrieved.json()["display_name"] == "Managed service"
+
+    updated = await identity_client.patch(
+        f"/v1/service-identities/{service_id}",
+        headers=headers,
+        json={"display_name": "Updated managed service"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["display_name"] == "Updated managed service"
+
+    issued = await identity_client.post(
+        f"/v1/service-identities/{service_id}/api-tokens",
+        headers=headers,
+        json={"name": "managed-service-token"},
+    )
+    assert issued.status_code == 201
+    service_token = issued.json()["token"]
+    authenticated = await identity_client.get(
+        "/v1/me", headers={"Authorization": f"Bearer {service_token}"}
+    )
+    assert authenticated.status_code == 200
+
+    archived = await identity_client.delete(f"/v1/service-identities/{service_id}", headers=headers)
+    assert archived.status_code == 204
+    archived_state = await identity_client.get(
+        f"/v1/service-identities/{service_id}", headers=headers
+    )
+    assert archived_state.status_code == 200
+    assert archived_state.json()["archived_at"] is not None
+
+    rejected = await identity_client.get(
+        "/v1/me", headers={"Authorization": f"Bearer {service_token}"}
+    )
+    assert rejected.status_code == 401
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
 async def test_administrator_can_manage_a_user_lifecycle(
     identity_environment: IdentityEnvironment,
     identity_client: httpx.AsyncClient,
@@ -167,6 +319,51 @@ async def test_administrator_can_manage_a_user_lifecycle(
     )
 
     assert archive_response.status_code == 204
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_administrator_can_retrieve_and_reset_a_users_password(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """User retrieval returns the target and password reset replaces its login secret."""
+    headers = identity_environment.authorization("admin")
+    username = identity_environment.name("password-reset-user")
+    old_password = "original-managed-password"
+    new_password = "replacement-managed-password"
+    created = await identity_client.post(
+        "/v1/users",
+        headers=headers,
+        json={
+            "name": username,
+            "display_name": "Password reset user",
+            "password": old_password,
+        },
+    )
+    assert created.status_code == 201
+    user_id = created.json()["id"]
+
+    retrieved = await identity_client.get(f"/v1/users/{user_id}", headers=headers)
+    assert retrieved.status_code == 200
+    assert retrieved.json()["id"] == user_id
+    assert retrieved.json()["name"] == username
+
+    reset = await identity_client.put(
+        f"/v1/users/{user_id}/password",
+        headers=headers,
+        json={"password": new_password},
+    )
+    assert reset.status_code == 204
+
+    old_login = await identity_client.post(
+        "/v1/auth/login", json={"username": username, "password": old_password}
+    )
+    assert old_login.status_code == 401
+    new_login = await identity_client.post(
+        "/v1/auth/login", json={"username": username, "password": new_password}
+    )
+    assert new_login.status_code == 200
 
 
 @pytest.mark.anyio
@@ -211,6 +408,41 @@ async def test_administrator_can_manage_a_group_membership_lifecycle(
     )
 
     assert archive_response.status_code == 204
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_administrator_can_discover_a_groups_archival_state(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """Group list and retrieval expose both active and archived group state."""
+    headers = identity_environment.authorization("admin")
+    created = await identity_client.post(
+        "/v1/groups",
+        headers=headers,
+        json={
+            "name": identity_environment.name("discoverable-group"),
+            "description": "Discoverable group",
+        },
+    )
+    assert created.status_code == 201
+    group_id = created.json()["id"]
+
+    listed = await identity_client.get("/v1/groups", headers=headers)
+    assert listed.status_code == 200
+    listed_group = next(item for item in listed.json() if item["id"] == group_id)
+    assert listed_group["archived_at"] is None
+
+    retrieved = await identity_client.get(f"/v1/groups/{group_id}", headers=headers)
+    assert retrieved.status_code == 200
+    assert retrieved.json()["description"] == "Discoverable group"
+
+    archived = await identity_client.delete(f"/v1/groups/{group_id}", headers=headers)
+    assert archived.status_code == 204
+    archived_state = await identity_client.get(f"/v1/groups/{group_id}", headers=headers)
+    assert archived_state.status_code == 200
+    assert archived_state.json()["archived_at"] is not None
 
 
 @pytest.mark.anyio

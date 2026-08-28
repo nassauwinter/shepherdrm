@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from shepherd_rm.database import transaction
+from tests.integration.leasing.support import acquire_test_lease, create_lease_resource
 from tests.integration.support import IdentityEnvironment, create_test_resource
 
 pytestmark = [pytest.mark.anyio, pytest.mark.integration]
@@ -175,4 +176,34 @@ async def test_acquisition_returns_active_lease_representation(
     identity_client: httpx.AsyncClient, identity_environment: IdentityEnvironment
 ) -> None:
     """Successful acquisition returns the selected resource and complete active lease fields."""
-    pass
+    resource = await create_lease_resource(
+        identity_client,
+        identity_environment,
+        "complete-acquisition",
+        default_ttl_seconds=60,
+        max_ttl_seconds=120,
+        labels={"region": "test"},
+    )
+    response = await acquire_test_lease(
+        identity_client,
+        identity_environment,
+        resource,
+        "complete-acquisition",
+        ttl_seconds=90,
+        consumer="smoke-runner",
+        metadata={"build": 42},
+    )
+
+    assert response.status_code == 201
+    lease = response.json()
+    assert lease["resource"]["id"] == resource["id"]
+    assert lease["resource"]["name"] == resource["name"]
+    assert lease["resource"]["available"] is False
+    assert lease["acquired_by"] == str(identity_environment.user_id)
+    assert lease["consumer"] == "smoke-runner"
+    assert lease["metadata"] == {"build": 42}
+    assert lease["state"] == "Active"
+    assert lease["expires_at"] is not None
+    assert lease["last_renewed_at"] is None
+    assert lease["ended_at"] is None
+    assert lease["end_reason"] is None

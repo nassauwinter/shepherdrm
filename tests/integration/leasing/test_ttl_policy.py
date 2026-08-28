@@ -7,7 +7,11 @@ from datetime import datetime
 import httpx
 import pytest
 
-from tests.integration.leasing.support import create_owned_lease
+from tests.integration.leasing.support import (
+    acquire_test_lease,
+    create_lease_resource,
+    create_owned_lease,
+)
 from tests.integration.support import IdentityEnvironment
 
 pytestmark = [pytest.mark.anyio, pytest.mark.integration]
@@ -134,53 +138,156 @@ async def test_optional_resource_without_default_creates_indefinite_lease(
     identity_client: httpx.AsyncClient, identity_environment: IdentityEnvironment
 ) -> None:
     """Omitting TTL for an optional resource without a default creates an indefinite lease."""
-    pass
+    lease = await create_owned_lease(identity_client, identity_environment, "optional-omitted")
+    assert lease["state"] == "Active"
+    assert lease["expires_at"] is None
 
 
 async def test_explicit_null_requests_indefinite_lease(
     identity_client: httpx.AsyncClient, identity_environment: IdentityEnvironment
 ) -> None:
     """Explicit null TTL selects an optional resource and creates an indefinite lease."""
-    pass
+    resource = await create_lease_resource(
+        identity_client,
+        identity_environment,
+        "optional-null",
+        default_ttl_seconds=60,
+    )
+    response = await acquire_test_lease(
+        identity_client,
+        identity_environment,
+        resource,
+        "optional-null",
+        ttl_seconds=None,
+    )
+    assert response.status_code == 201
+    assert response.json()["expires_at"] is None
 
 
 async def test_explicit_ttl_overrides_resource_default(
     identity_client: httpx.AsyncClient, identity_environment: IdentityEnvironment
 ) -> None:
     """An explicit acquisition TTL replaces the selected resource's configured default."""
-    pass
+    resource = await create_lease_resource(
+        identity_client,
+        identity_environment,
+        "explicit-ttl",
+        default_ttl_seconds=60,
+        max_ttl_seconds=180,
+    )
+    response = await acquire_test_lease(
+        identity_client,
+        identity_environment,
+        resource,
+        "explicit-ttl",
+        ttl_seconds=120,
+    )
+    assert response.status_code == 201
+    acquired_at = datetime.fromisoformat(response.json()["acquired_at"])
+    expires_at = datetime.fromisoformat(response.json()["expires_at"])
+    assert (expires_at - acquired_at).total_seconds() == 120
 
 
 async def test_renewal_without_ttl_uses_current_resource_default(
     identity_client: httpx.AsyncClient, identity_environment: IdentityEnvironment
 ) -> None:
     """Omitting renewal TTL resolves expiration from the resource's current default policy."""
-    pass
+    resource = await create_lease_resource(
+        identity_client,
+        identity_environment,
+        "current-default",
+        default_ttl_seconds=60,
+        max_ttl_seconds=180,
+    )
+    acquired = await acquire_test_lease(
+        identity_client, identity_environment, resource, "current-default"
+    )
+    assert acquired.status_code == 201
+    updated = await identity_client.patch(
+        f"/v1/resources/{resource['id']}",
+        headers=identity_environment.authorization("admin"),
+        json={"version": resource["version"], "default_ttl_seconds": 120},
+    )
+    assert updated.status_code == 200
+    renewed = await identity_client.post(
+        f"/v1/leases/{acquired.json()['id']}/renew",
+        headers=identity_environment.authorization("user"),
+        json={},
+    )
+    assert renewed.status_code == 200
+    renewed_at = datetime.fromisoformat(renewed.json()["last_renewed_at"])
+    expires_at = datetime.fromisoformat(renewed.json()["expires_at"])
+    assert (expires_at - renewed_at).total_seconds() == 120
 
 
 async def test_optional_lease_can_be_renewed_from_indefinite_to_finite(
     identity_client: httpx.AsyncClient, identity_environment: IdentityEnvironment
 ) -> None:
     """Explicit finite renewal gives an optional indefinite lease an expiration timestamp."""
-    pass
+    lease = await create_owned_lease(identity_client, identity_environment, "indefinite-finite")
+    response = await identity_client.post(
+        f"/v1/leases/{lease['id']}/renew",
+        headers=identity_environment.authorization("user"),
+        json={"ttl_seconds": 90},
+    )
+    assert response.status_code == 200
+    assert response.json()["expires_at"] is not None
 
 
 async def test_optional_lease_can_be_renewed_from_finite_to_indefinite(
     identity_client: httpx.AsyncClient, identity_environment: IdentityEnvironment
 ) -> None:
     """Explicit null renewal removes expiration from a finite lease on an optional resource."""
-    pass
+    lease = await create_owned_lease(
+        identity_client,
+        identity_environment,
+        "finite-indefinite",
+        default_ttl_seconds=60,
+        expiration_mode="Optional",
+    )
+    response = await identity_client.post(
+        f"/v1/leases/{lease['id']}/renew",
+        headers=identity_environment.authorization("user"),
+        json={"ttl_seconds": None},
+    )
+    assert response.status_code == 200
+    assert response.json()["expires_at"] is None
 
 
 async def test_required_resource_rejects_explicit_indefinite_acquisition(
     identity_client: httpx.AsyncClient, identity_environment: IdentityEnvironment
 ) -> None:
     """Explicit null acquisition cannot select a resource whose expiration policy is required."""
-    pass
+    resource = await create_lease_resource(
+        identity_client,
+        identity_environment,
+        "required-null-acquire",
+        expiration_mode="Required",
+        default_ttl_seconds=60,
+    )
+    response = await acquire_test_lease(
+        identity_client,
+        identity_environment,
+        resource,
+        "required-null-acquire",
+        ttl_seconds=None,
+    )
+    assert response.status_code == 409
 
 
 async def test_required_resource_rejects_indefinite_renewal(
     identity_client: httpx.AsyncClient, identity_environment: IdentityEnvironment
 ) -> None:
     """Explicit null renewal is rejected for a resource whose expiration policy is required."""
-    pass
+    lease = await create_owned_lease(
+        identity_client,
+        identity_environment,
+        "required-null-renew",
+        default_ttl_seconds=60,
+    )
+    response = await identity_client.post(
+        f"/v1/leases/{lease['id']}/renew",
+        headers=identity_environment.authorization("user"),
+        json={"ttl_seconds": None},
+    )
+    assert response.status_code == 409

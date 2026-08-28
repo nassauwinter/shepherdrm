@@ -95,7 +95,7 @@ async def test_administrator_configures_resource_expiration_policy(
     identity_environment: IdentityEnvironment,
     identity_client: httpx.AsyncClient,
 ) -> None:
-    """Resource creation and updates persist a valid resource-specific TTL policy."""
+    """A required 1,800-second default below a 7,200-second maximum persists and clears."""
     headers = identity_environment.authorization("admin")
     created = await identity_client.post(
         "/v1/resources",
@@ -142,12 +142,12 @@ async def test_administrator_configures_resource_expiration_policy(
     ],
     ids=["required-without-default", "default-above-maximum"],
 )
-async def test_resource_creation_rejects_invalid_expiration_policy(
+async def test_resource_creation_rejects_missing_or_above_maximum_default_ttl(
     identity_environment: IdentityEnvironment,
     identity_client: httpx.AsyncClient,
     policy: dict[str, object],
 ) -> None:
-    """Creation rejects expiration policies that cannot produce a valid lease TTL."""
+    """Creation returns 422 when required mode lacks a default or default exceeds maximum."""
     response = await identity_client.post(
         "/v1/resources",
         headers=identity_environment.authorization("admin"),

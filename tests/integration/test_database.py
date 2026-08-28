@@ -142,13 +142,18 @@ async def test_raw_updates_advance_updated_at(integration_settings: Settings) ->
         "default-above-maximum",
     ],
 )
-async def test_database_rejects_invalid_resource_expiration_policy(
+async def test_database_enforces_required_positive_and_ordered_expiration_limits(
     integration_settings: Settings,
     expiration_mode: str,
     default_ttl: int | None,
     max_ttl: int | None,
 ) -> None:
-    """Database constraints protect expiration policy invariants outside the HTTP API."""
+    """The database enforces three expiration-limit conditions.
+
+    - Required mode has a default TTL.
+    - Default and maximum TTL values are positive when present.
+    - The default TTL does not exceed the maximum TTL.
+    """
     resource_id = uuid.uuid4()
 
     with pytest.raises(psycopg.errors.CheckViolation):

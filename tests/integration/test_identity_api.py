@@ -55,7 +55,7 @@ async def test_login_token_identifies_the_authenticated_user(
     identity_environment: IdentityEnvironment,
     identity_client: httpx.AsyncClient,
 ) -> None:
-    """Valid local credentials issue a token that resolves to the same user."""
+    """Credentials matching an active user issue a token that resolves to that user."""
     login_response = await identity_client.post(
         "/v1/auth/login",
         json={
@@ -73,6 +73,40 @@ async def test_login_token_identifies_the_authenticated_user(
 
     assert me_response.status_code == 200
     assert me_response.json()["id"] == str(identity_environment.user_id)
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "credential_state",
+    ["invalid-password", "unknown-user", "archived-user"],
+)
+async def test_login_rejects_credentials_without_disclosing_account_state(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+    credential_state: Literal["invalid-password", "unknown-user", "archived-user"],
+) -> None:
+    """An incorrect password, unknown username, or archived user returns the same 401 problem."""
+    username = identity_environment.name("user")
+    password = "regular-user-password"
+    if credential_state == "invalid-password":
+        password = "incorrect-user-password"
+    elif credential_state == "unknown-user":
+        username = identity_environment.name("unknown-user")
+    else:
+        archived = await identity_client.delete(
+            f"/v1/users/{identity_environment.user_id}",
+            headers=identity_environment.authorization("admin"),
+        )
+        assert archived.status_code == 204
+
+    response = await identity_client.post(
+        "/v1/auth/login", json={"username": username, "password": password}
+    )
+
+    assert response.status_code == 401
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.json()["detail"] == "Invalid username or password"
 
 
 @pytest.mark.anyio
@@ -287,6 +321,50 @@ async def test_administrator_can_manage_a_service_identity_lifecycle(
 
 @pytest.mark.anyio
 @pytest.mark.integration
+async def test_service_identity_creation_enforces_identity_invariants(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """Verify service creation returns public state and enforces two restrictions.
+
+    1. Reusing an existing principal name returns 409 Conflict.
+    2. Supplying a password for a service identity returns 400 Bad Request.
+    """
+    headers = identity_environment.authorization("admin")
+    name = identity_environment.name("created-service")
+    created = await identity_client.post(
+        "/v1/service-identities",
+        headers=headers,
+        json={"name": name, "display_name": "Created service"},
+    )
+    assert created.status_code == 201
+    assert created.json()["kind"] == "Service"
+    assert created.json()["role"] == "User"
+    assert created.json()["name"] == name
+    assert created.json()["display_name"] == "Created service"
+    assert created.json()["archived_at"] is None
+    assert "password" not in created.json()
+
+    duplicate = await identity_client.post(
+        "/v1/service-identities",
+        headers=headers,
+        json={"name": name, "display_name": "Duplicate service"},
+    )
+    assert duplicate.status_code == 409
+    password_service = await identity_client.post(
+        "/v1/service-identities",
+        headers=headers,
+        json={
+            "name": identity_environment.name("password-service"),
+            "display_name": "Password service",
+            "password": "service-password-is-invalid",
+        },
+    )
+    assert password_service.status_code == 400
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
 async def test_administrator_can_manage_a_user_lifecycle(
     identity_environment: IdentityEnvironment,
     identity_client: httpx.AsyncClient,
@@ -319,6 +397,161 @@ async def test_administrator_can_manage_a_user_lifecycle(
     )
 
     assert archive_response.status_code == 204
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_user_creation_returns_public_state_and_rejects_duplicate_names(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """User creation returns usable public state while preserving unique names."""
+    headers = identity_environment.authorization("admin")
+    name = identity_environment.name("created-user")
+    password = "created-user-password"
+    request = {
+        "name": name,
+        "display_name": "Created user",
+        "role": "User",
+        "password": password,
+    }
+    created = await identity_client.post("/v1/users", headers=headers, json=request)
+    assert created.status_code == 201
+    assert created.json()["kind"] == "User"
+    assert created.json()["role"] == "User"
+    assert created.json()["name"] == name
+    assert created.json()["display_name"] == "Created user"
+    assert created.json()["archived_at"] is None
+    assert "password" not in created.json()
+
+    login = await identity_client.post(
+        "/v1/auth/login", json={"username": name, "password": password}
+    )
+    assert login.status_code == 200
+    duplicate = await identity_client.post("/v1/users", headers=headers, json=request)
+    assert duplicate.status_code == 409
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_user_listing_is_ordered_and_includes_archived_state(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """Administrator user listing is deterministic and represents archived users."""
+    headers = identity_environment.authorization("admin")
+    created_users = []
+    for prefix in ("listed-z", "listed-a"):
+        created = await identity_client.post(
+            "/v1/users",
+            headers=headers,
+            json={
+                "name": identity_environment.name(prefix),
+                "display_name": f"Listed {prefix}",
+                "password": f"{prefix}-user-password",
+            },
+        )
+        assert created.status_code == 201
+        created_users.append(created.json())
+    archived = await identity_client.delete(f"/v1/users/{created_users[1]['id']}", headers=headers)
+    assert archived.status_code == 204
+    service = await identity_client.post(
+        "/v1/service-identities",
+        headers=headers,
+        json={
+            "name": identity_environment.name("listed-service"),
+            "display_name": "Listed service",
+        },
+    )
+    assert service.status_code == 201
+
+    response = await identity_client.get("/v1/users", headers=headers)
+
+    assert response.status_code == 200
+    names = [item["name"] for item in response.json()]
+    assert names == sorted(names)
+    users_by_id = {item["id"]: item for item in response.json()}
+    assert created_users[0]["id"] in users_by_id
+    assert users_by_id[created_users[1]["id"]]["archived_at"] is not None
+    assert service.json()["id"] not in users_by_id
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_user_update_persists_display_name_and_role(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """Updating a user persists both mutable fields and returns the resulting state."""
+    headers = identity_environment.authorization("admin")
+    created = await identity_client.post(
+        "/v1/users",
+        headers=headers,
+        json={
+            "name": identity_environment.name("updated-user"),
+            "display_name": "Before update",
+            "password": "updated-user-password",
+        },
+    )
+    assert created.status_code == 201
+    user_id = created.json()["id"]
+
+    updated = await identity_client.patch(
+        f"/v1/users/{user_id}",
+        headers=headers,
+        json={"display_name": "After update", "role": "Admin"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["display_name"] == "After update"
+    assert updated.json()["role"] == "Admin"
+
+    retrieved = await identity_client.get(f"/v1/users/{user_id}", headers=headers)
+    assert retrieved.status_code == 200
+    assert retrieved.json()["display_name"] == "After update"
+    assert retrieved.json()["role"] == "Admin"
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_user_archive_exposes_state_and_disables_existing_credentials(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """Archiving a user remains observable while disabling its password and bearer tokens."""
+    headers = identity_environment.authorization("admin")
+    username = identity_environment.name("archived-user")
+    password = "archived-user-password"
+    created = await identity_client.post(
+        "/v1/users",
+        headers=headers,
+        json={"name": username, "display_name": "Archived user", "password": password},
+    )
+    assert created.status_code == 201
+    user_id = created.json()["id"]
+    login = await identity_client.post(
+        "/v1/auth/login", json={"username": username, "password": password}
+    )
+    assert login.status_code == 200
+    access_token = login.json()["access_token"]
+
+    archived = await identity_client.delete(f"/v1/users/{user_id}", headers=headers)
+    assert archived.status_code == 204
+    retrieved = await identity_client.get(f"/v1/users/{user_id}", headers=headers)
+    assert retrieved.status_code == 200
+    assert retrieved.json()["archived_at"] is not None
+    listed = await identity_client.get("/v1/users", headers=headers)
+    assert listed.status_code == 200
+    archived_listing = next(item for item in listed.json() if item["id"] == user_id)
+    assert archived_listing["archived_at"] is not None
+
+    rejected_login = await identity_client.post(
+        "/v1/auth/login", json={"username": username, "password": password}
+    )
+    assert rejected_login.status_code == 401
+    rejected_token = await identity_client.get(
+        "/v1/me", headers={"Authorization": f"Bearer {access_token}"}
+    )
+    assert rejected_token.status_code == 401
 
 
 @pytest.mark.anyio
@@ -408,6 +641,28 @@ async def test_administrator_can_manage_a_group_membership_lifecycle(
     )
 
     assert archive_response.status_code == 204
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_group_creation_returns_public_state_and_rejects_duplicate_names(
+    identity_environment: IdentityEnvironment,
+    identity_client: httpx.AsyncClient,
+) -> None:
+    """Group creation returns its stored state and preserves unique names."""
+    headers = identity_environment.authorization("admin")
+    request = {
+        "name": identity_environment.name("created-group"),
+        "description": "Created group",
+    }
+    created = await identity_client.post("/v1/groups", headers=headers, json=request)
+    assert created.status_code == 201
+    assert created.json()["name"] == request["name"]
+    assert created.json()["description"] == "Created group"
+    assert created.json()["archived_at"] is None
+
+    duplicate = await identity_client.post("/v1/groups", headers=headers, json=request)
+    assert duplicate.status_code == 409
 
 
 @pytest.mark.anyio

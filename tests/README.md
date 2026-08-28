@@ -8,6 +8,11 @@ behavior rather than implementation details.
 - Every function whose name starts with `test_` must have a docstring.
 - The docstring must state what behavior is being verified and, when useful,
   the important condition or expected result.
+- Test names and docstrings must explicitly define what makes an input or
+  outcome valid, invalid, correct, or incorrect. Do not use those labels as
+  substitutes for the actual condition. For example, prefer "A lease request
+  whose TTL exceeds the resource maximum returns 422" over "An invalid lease
+  request is rejected."
 - Keep one behavioral intent per test. Split unrelated assertions into separate
   tests so failures identify the broken behavior clearly. Multiple assertions
   are appropriate when they jointly verify one response or behavioral outcome.

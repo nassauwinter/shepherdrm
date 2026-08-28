@@ -117,7 +117,7 @@ async def test_renewal_above_resource_maximum_returns_conflict(
 async def test_successful_renewal_records_server_timestamp(
     identity_client: httpx.AsyncClient, identity_environment: IdentityEnvironment
 ) -> None:
-    """A valid owner renewal records its server-generated renewal timestamp."""
+    """An owner renewal to 90 seconds under a 120-second maximum records a timestamp."""
     acquired = await create_owned_lease(
         identity_client,
         identity_environment,

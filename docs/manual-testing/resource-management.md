@@ -161,6 +161,7 @@ jq < "/tmp/shepherd-rm-management-forbidden-$RUN_ID.json"
 Replace the labels using the current resource version:
 
 ```bash
+STALE_RESOURCE_VERSION=$RESOURCE_VERSION
 UPDATED_RESOURCE=$(
   curl -fsS -X PATCH "http://localhost:8000/v1/resources/$RESOURCE_ID" \
     -H "Authorization: Bearer $ADMIN_TOKEN" \
@@ -177,6 +178,21 @@ jq -e --argjson previous "$RESOURCE_VERSION" \
   '.version == ($previous + 1) and .labels.region == "updated"' \
   <<<"$UPDATED_RESOURCE"
 RESOURCE_VERSION=$(jq -er '.version' <<<"$UPDATED_RESOURCE")
+```
+
+Verify that the previous version cannot overwrite the update. This request
+must return HTTP `409`:
+
+```bash
+STATUS=$(curl -sS -o "/tmp/shepherd-rm-management-conflict-$RUN_ID.json" \
+  -w '%{http_code}' -X PATCH \
+  "http://localhost:8000/v1/resources/$RESOURCE_ID" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data-binary "$(jq -n --argjson version "$STALE_RESOURCE_VERSION" \
+    '{version: $version, labels: {purpose: "stale-update"}}')")
+test "$STATUS" = 409
+jq < "/tmp/shepherd-rm-management-conflict-$RUN_ID.json"
 ```
 
 Disable and enable the resource, verifying derived availability after each
@@ -263,9 +279,11 @@ Clear tokens, identifiers, and temporary responses from the current shell:
 
 ```bash
 rm -f "/tmp/shepherd-rm-management-forbidden-$RUN_ID.json"
+rm -f "/tmp/shepherd-rm-management-conflict-$RUN_ID.json"
 rm -f "/tmp/shepherd-rm-management-not-found-$RUN_ID.json"
 unset ADMIN_TOKEN USER_TOKEN RUN_ID TEST_USERNAME TEST_USER TEST_USER_ID STATUS
-unset RESOURCE RESOURCE_ID RESOURCE_NAME RESOURCE_VERSION UPDATED_RESOURCE
+unset RESOURCE RESOURCE_ID RESOURCE_NAME RESOURCE_VERSION STALE_RESOURCE_VERSION
+unset UPDATED_RESOURCE
 ```
 
 Stop the containers while preserving the local PostgreSQL data:

@@ -25,6 +25,7 @@ EXPECTED_TABLES = {
     "principals",
     "resource_group_grants",
     "resource_principal_grants",
+    "resource_secrets",
     "resources",
 }
 
@@ -104,6 +105,7 @@ def test_initial_migration_upgrades_and_downgrades_postgresql(
             "trg_groups_set_updated_at",
             "trg_principals_set_updated_at",
             "trg_resources_set_updated_at",
+            "trg_resource_secrets_set_updated_at",
         }
 
         command.check(config)

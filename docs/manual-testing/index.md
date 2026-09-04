@@ -14,6 +14,7 @@ identity-management
 resource-management
 resource-visibility
 leasing
+resource-secrets
 ```
 
 Together, the walkthroughs cover the currently implemented public feature
@@ -27,6 +28,8 @@ areas:
   transitions, visibility grants, and archival;
 - exclusive and shared acquisition, TTL policies, idempotency, lease reads and
   filters, renewal, release, administrative revocation, and authorization.
+- managed and external resource-secret administration, explicit administrator
+  access, lease-authorized discovery and access, and post-release denial.
 
 The walkthroughs preserve the local PostgreSQL volume when they stop the
 containers. For a complete reset of a disposable installation, run:

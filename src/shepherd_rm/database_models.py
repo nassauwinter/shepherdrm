@@ -13,6 +13,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     MetaData,
     String,
     Text,
@@ -201,6 +202,37 @@ class ResourceGroupGrant(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
     )
+
+
+class ResourceSecret(TimestampMixin, Base):
+    __tablename__ = "resource_secrets"
+    __table_args__ = (
+        CheckConstraint("mode IN ('Managed', 'External')", name="mode_allowed"),
+        CheckConstraint(
+            "(mode = 'Managed' AND encrypted_value IS NOT NULL "
+            "AND encryption_key_id IS NOT NULL AND external_provider IS NULL "
+            "AND external_reference IS NULL) OR "
+            "(mode = 'External' AND encrypted_value IS NULL "
+            "AND encryption_key_id IS NULL AND external_provider IS NOT NULL "
+            "AND external_reference IS NOT NULL)",
+            name="material_matches_mode",
+        ),
+        CheckConstraint("version > 0", name="version_positive"),
+        UniqueConstraint("resource_id", "name", name="uq_resource_secrets_resource_name"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    resource_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("resources.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str | None] = mapped_column(String(1000))
+    mode: Mapped[str] = mapped_column(String(16))
+    encrypted_value: Mapped[bytes | None] = mapped_column(LargeBinary)
+    encryption_key_id: Mapped[str | None] = mapped_column(String(255))
+    external_provider: Mapped[str | None] = mapped_column(String(255))
+    external_reference: Mapped[str | None] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(Integer, server_default="1")
 
 
 class Lease(Base):

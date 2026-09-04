@@ -35,3 +35,7 @@ See {doc}`resource-catalog` for its permissions, filters, and update model.
 The `/v1/leases` API supports visibility-aware acquisition, listing, renewal,
 release, and administrative revocation. A separate worker expires finite leases;
 see {doc}`manual-testing/leasing` for a complete manual flow.
+
+Resources can also carry encrypted managed secrets or external secret references.
+Managed storage requires a deployment encryption key configured separately from
+PostgreSQL. See {doc}`resource-secrets` for key handling and access behavior.

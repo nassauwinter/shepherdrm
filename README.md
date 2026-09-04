@@ -95,3 +95,7 @@ access grants. Users and pipelines can acquire matching resources with
 principal-scoped idempotency, then list, renew, and release their leases;
 administrators can inspect and revoke any lease. The Compose worker expires
 bounded batches of leases with finite TTLs while indefinite leases remain active.
+Administrators can associate encrypted managed values or opaque external references
+with resources and explicitly access them; active lease owners can discover and
+access their leased resource's secrets without exposing material in ordinary
+resource, lease, or secret-metadata responses.

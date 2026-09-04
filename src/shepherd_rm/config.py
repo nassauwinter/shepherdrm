@@ -3,7 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     login_token_ttl_seconds: int = Field(default=43_200, ge=60)
     lease_expiration_poll_seconds: float = Field(default=1.0, gt=0)
     lease_expiration_batch_size: int = Field(default=100, ge=1, le=1000)
+    secret_encryption_active_key_id: str | None = None
+    secret_encryption_keys: dict[str, SecretStr] = Field(default_factory=dict)
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
     log_level: str = "INFO"

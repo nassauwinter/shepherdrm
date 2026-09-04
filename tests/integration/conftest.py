@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import uuid
 from collections.abc import AsyncIterator
@@ -29,7 +30,13 @@ def integration_database_url() -> str:
 @pytest.fixture
 def integration_settings(integration_database_url: str) -> Settings:
     """Build application settings for the configured integration database."""
-    return Settings(database_url=integration_database_url)
+    return Settings(
+        database_url=integration_database_url,
+        secret_encryption_active_key_id="integration-test-key",
+        secret_encryption_keys={
+            "integration-test-key": base64.b64encode(b"integration-test-key-material!!!").decode()
+        },
+    )
 
 
 @pytest.fixture

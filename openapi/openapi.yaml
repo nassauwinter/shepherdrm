@@ -651,6 +651,95 @@ paths:
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
         "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}/secrets:
+    parameters: [{$ref: "#/components/parameters/ResourceId"}]
+    post:
+      tags: [Resource secrets]
+      summary: Create resource-secret metadata and material
+      operationId: createResourceSecret
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/ResourceSecretCreate"}
+      responses:
+        "201": {$ref: "#/components/responses/ResourceSecretMetadata"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+    get:
+      tags: [Resource secrets]
+      summary: List safe resource-secret metadata
+      operationId: listResourceSecrets
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Secret descriptors without managed values or external references.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/ResourceSecretMetadata"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}/secrets/{secret_id}:
+    parameters:
+      - {$ref: "#/components/parameters/ResourceId"}
+      - {$ref: "#/components/parameters/SecretId"}
+    get:
+      tags: [Resource secrets]
+      summary: Get safe resource-secret metadata
+      operationId: getResourceSecret
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/ResourceSecretMetadata"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    patch:
+      tags: [Resource secrets]
+      summary: Update metadata or atomically replace secret material
+      operationId: updateResourceSecret
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/ResourceSecretUpdate"}
+      responses:
+        "200": {$ref: "#/components/responses/ResourceSecretMetadata"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+    delete:
+      tags: [Resource secrets]
+      summary: Permanently delete secret material
+      operationId: deleteResourceSecret
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: The resource secret is absent.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}/secrets/{secret_id}/access:
+    parameters:
+      - {$ref: "#/components/parameters/ResourceId"}
+      - {$ref: "#/components/parameters/SecretId"}
+    post:
+      tags: [Resource secrets]
+      summary: Explicitly access secret material as an administrator
+      operationId: accessResourceSecret
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/SecretAccess"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+        "503": {$ref: "#/components/responses/ServiceUnavailable"}
   /v1/leases:
     post:
       tags: [Leases]
@@ -755,6 +844,41 @@ paths:
         "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
         "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/leases/{lease_id}/secrets:
+    parameters: [{$ref: "#/components/parameters/LeaseId"}]
+    get:
+      tags: [Resource secrets]
+      summary: List secret descriptors through an active authorized lease
+      description: Regular lease owners must also retain current visibility of the resource.
+      operationId: listLeaseSecrets
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Secret descriptors for the leased resource without material.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/ResourceSecretMetadata"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/leases/{lease_id}/secrets/{secret_id}/access:
+    parameters:
+      - {$ref: "#/components/parameters/LeaseId"}
+      - {$ref: "#/components/parameters/SecretId"}
+    post:
+      tags: [Resource secrets]
+      summary: Access secret material through an active authorized lease
+      description: Regular lease owners must also retain current visibility of the resource.
+      operationId: accessLeaseSecret
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/SecretAccess"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+        "503": {$ref: "#/components/responses/ServiceUnavailable"}
 components:
   securitySchemes:
     bearerAuth:
@@ -788,6 +912,11 @@ components:
       schema: {type: string, format: uuid}
     LeaseId:
       name: lease_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    SecretId:
+      name: secret_id
       in: path
       required: true
       schema: {type: string, format: uuid}
@@ -845,6 +974,16 @@ components:
       content:
         application/json:
           schema: {$ref: "#/components/schemas/LeaseRenew"}
+    ResourceSecretCreate:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ResourceSecretCreate"}
+    ResourceSecretUpdate:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ResourceSecretUpdate"}
   responses:
     Unauthorized:
       description: Authentication is required or invalid.
@@ -888,6 +1027,13 @@ components:
       content:
         application/problem+json:
           schema: {$ref: "#/components/schemas/Problem"}
+    ServiceUnavailable:
+      description: Managed-secret encryption or decryption is not available.
+      headers:
+        x-correlation-id: {$ref: "#/components/headers/CorrelationId"}
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
     Principal:
       description: Principal details.
       content:
@@ -925,6 +1071,23 @@ components:
       content:
         application/json:
           schema: {$ref: "#/components/schemas/LeasePage"}
+    ResourceSecretMetadata:
+      description: Resource-secret metadata without sensitive material.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ResourceSecretMetadata"}
+    SecretAccess:
+      description: Sensitive material returned by an explicit authorized access operation.
+      headers:
+        Cache-Control:
+          description: Prevents storage of secret material by caches.
+          schema: {type: string, const: no-store}
+        Pragma:
+          description: Provides compatibility with older HTTP caches.
+          schema: {type: string, const: no-cache}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/SecretAccess"}
   headers:
     CorrelationId:
       description: Correlates the response with logs and traces.
@@ -1107,6 +1270,88 @@ components:
         offset: {type: integer, minimum: 0}
         limit: {type: integer, minimum: 1, maximum: 200}
         total: {type: integer, minimum: 0}
+    ManagedSecretMaterial:
+      type: object
+      additionalProperties: false
+      required: [mode, value]
+      properties:
+        mode: {type: string, const: Managed}
+        value: {type: string, minLength: 1, maxLength: 65536, writeOnly: true}
+    ExternalSecretMaterial:
+      type: object
+      additionalProperties: false
+      required: [mode, provider, reference]
+      properties:
+        mode: {type: string, const: External}
+        provider: {type: string, minLength: 1, maxLength: 255}
+        reference: {type: string, minLength: 1, maxLength: 2048, writeOnly: true}
+    SecretMaterial:
+      oneOf:
+        - {$ref: "#/components/schemas/ManagedSecretMaterial"}
+        - {$ref: "#/components/schemas/ExternalSecretMaterial"}
+      discriminator:
+        propertyName: mode
+        mapping:
+          Managed: "#/components/schemas/ManagedSecretMaterial"
+          External: "#/components/schemas/ExternalSecretMaterial"
+    ResourceSecretCreate:
+      type: object
+      additionalProperties: false
+      required: [name, material]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        description: {type: [string, "null"], maxLength: 1000}
+        material: {$ref: "#/components/schemas/SecretMaterial"}
+    ResourceSecretUpdate:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: {type: integer, minimum: 1}
+        name: {type: string, minLength: 1, maxLength: 255}
+        description: {type: [string, "null"], maxLength: 1000}
+        material: {$ref: "#/components/schemas/SecretMaterial"}
+    ResourceSecretMetadata:
+      type: object
+      additionalProperties: false
+      required: [id, resource_id, name, description, mode, version, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        resource_id: {type: string, format: uuid}
+        name: {type: string}
+        description: {type: [string, "null"]}
+        mode: {type: string, enum: [Managed, External]}
+        version: {type: integer, minimum: 1}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ManagedSecretAccess:
+      type: object
+      additionalProperties: false
+      required: [id, name, mode, value]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        mode: {type: string, const: Managed}
+        value: {type: string, readOnly: true}
+    ExternalSecretAccess:
+      type: object
+      additionalProperties: false
+      required: [id, name, mode, provider, reference]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        mode: {type: string, const: External}
+        provider: {type: string}
+        reference: {type: string, readOnly: true}
+    SecretAccess:
+      oneOf:
+        - {$ref: "#/components/schemas/ManagedSecretAccess"}
+        - {$ref: "#/components/schemas/ExternalSecretAccess"}
+      discriminator:
+        propertyName: mode
+        mapping:
+          Managed: "#/components/schemas/ManagedSecretAccess"
+          External: "#/components/schemas/ExternalSecretAccess"
     LoginRequest:
       type: object
       additionalProperties: false

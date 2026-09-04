@@ -23,6 +23,7 @@ from shepherd_rm.leasing import build_leasing_router
 from shepherd_rm.logging import configure_logging
 from shepherd_rm.models import HealthResponse, Problem, ReadinessResponse
 from shepherd_rm.request_context import reset_correlation_id, set_correlation_id
+from shepherd_rm.resource_secrets import build_resource_secrets_router
 
 ReadinessCheck = Callable[[], Awaitable[None]]
 LOGGER = logging.getLogger(__name__)
@@ -54,6 +55,7 @@ def create_app(
     app.include_router(build_identity_router(current_settings))
     app.include_router(build_catalog_router(current_settings))
     app.include_router(build_leasing_router(current_settings))
+    app.include_router(build_resource_secrets_router(current_settings))
 
     async def default_readiness_check() -> None:
         await check_database(current_settings)

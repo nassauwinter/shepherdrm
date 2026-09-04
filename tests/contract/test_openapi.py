@@ -64,7 +64,15 @@ def test_every_documented_error_response_has_a_problem_body() -> None:
         "NotFound",
         "Conflict",
         "ValidationError",
+        "ServiceUnavailable",
     ]:
         assert responses[name]["content"]["application/problem+json"]["schema"] == {
             "$ref": "#/components/schemas/Problem"
         }
+
+
+def test_resource_secret_metadata_schema_cannot_expose_material() -> None:
+    """The reusable metadata schema contains no plaintext or external-reference property."""
+    schema = load_contract()["components"]["schemas"]["ResourceSecretMetadata"]
+
+    assert not ({"value", "reference", "material"} & schema["properties"].keys())

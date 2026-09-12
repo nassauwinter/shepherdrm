@@ -19,8 +19,6 @@ src/shepherd_rm/  Server package
 tests/            Automated tests
 migrations/       PostgreSQL schema migrations
 openapi/          Published API contract
-sdk/              Python SDK package
-cli/              Command-line client package
 ```
 
 The authoritative HTTP contract is [openapi/openapi.yaml](openapi/openapi.yaml). API changes update the contract, server implementation, and relevant tests together.

@@ -64,11 +64,24 @@ def test_every_documented_error_response_has_a_problem_body() -> None:
         "NotFound",
         "Conflict",
         "ValidationError",
+        "PayloadTooLarge",
         "ServiceUnavailable",
     ]:
         assert responses[name]["content"]["application/problem+json"]["schema"] == {
             "$ref": "#/components/schemas/Problem"
         }
+
+
+def test_every_request_body_operation_documents_payload_too_large() -> None:
+    """Every body-bearing operation documents the transport-level size rejection."""
+    contract = load_contract()
+    for path_item in contract["paths"].values():
+        for operation in path_item.values():
+            if not isinstance(operation, dict) or "requestBody" not in operation:
+                continue
+            assert operation["responses"]["413"] == {
+                "$ref": "#/components/responses/PayloadTooLarge"
+            }
 
 
 def test_resource_secret_metadata_schema_cannot_expose_material() -> None:

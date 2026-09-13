@@ -1,9 +1,12 @@
 """Verify public application behavior without requiring external services."""
 
+from collections.abc import AsyncIterator
+
 import httpx
 import pytest
 
 from shepherd_rm.application import create_app
+from shepherd_rm.config import Settings
 
 
 async def ready() -> None:
@@ -99,3 +102,63 @@ async def test_validation_problem_does_not_reflect_secret_input() -> None:
     assert response.headers["content-type"] == "application/problem+json"
     assert password not in response.text
     assert response.json()["detail"] == "The request did not satisfy the API contract"
+
+
+@pytest.mark.anyio
+async def test_declared_oversized_request_returns_safe_problem() -> None:
+    """A request with an oversized content length is rejected without reading its secret."""
+    secret = "secret-value-that-must-not-be-reflected"
+    app = create_app(
+        settings=Settings(max_request_body_bytes=16),
+        readiness_check=ready,
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/v1/auth/login",
+            content=secret,
+            headers={"x-correlation-id": "oversized-request"},
+        )
+
+    assert response.status_code == 413
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.headers["x-correlation-id"] == "oversized-request"
+    assert secret not in response.text
+    assert response.json() == {
+        "type": "about:blank",
+        "title": "Payload too large",
+        "status": 413,
+        "detail": "The request body exceeds the configured size limit",
+        "correlation_id": "oversized-request",
+    }
+
+
+@pytest.mark.anyio
+async def test_streamed_oversized_request_returns_safe_problem() -> None:
+    """A streamed request is rejected when its accumulated bytes cross the limit."""
+
+    secret = b"streamed-secret-value"
+
+    async def body_chunks() -> AsyncIterator[bytes]:
+        yield secret[:8]
+        yield secret[8:]
+
+    app = create_app(
+        settings=Settings(max_request_body_bytes=8),
+        readiness_check=ready,
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/v1/auth/login",
+            content=body_chunks(),
+            headers={"x-correlation-id": "streamed-request"},
+        )
+
+    assert response.status_code == 413
+    assert response.headers["x-correlation-id"] == "streamed-request"
+    assert secret.decode() not in response.text

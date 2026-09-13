@@ -22,7 +22,12 @@ from shepherd_rm.identity.api import build_identity_router
 from shepherd_rm.leasing import build_leasing_router
 from shepherd_rm.logging import configure_logging
 from shepherd_rm.models import HealthResponse, Problem, ReadinessResponse
-from shepherd_rm.request_context import reset_correlation_id, set_correlation_id
+from shepherd_rm.request_context import (
+    reset_correlation_id,
+    select_correlation_id,
+    set_correlation_id,
+)
+from shepherd_rm.request_limits import RequestBodyLimitMiddleware
 from shepherd_rm.resource_secrets import build_resource_secrets_router
 
 ReadinessCheck = Callable[[], Awaitable[None]]
@@ -101,16 +106,7 @@ def create_app(
         call_next: RequestResponseEndpoint,
     ) -> Response:
         started_at = time.perf_counter()
-        supplied_correlation_id = request.headers.get("x-correlation-id")
-        correlation_id = (
-            supplied_correlation_id
-            if supplied_correlation_id
-            and len(supplied_correlation_id) <= 128
-            and all(
-                character.isalnum() or character in "-_." for character in supplied_correlation_id
-            )
-            else str(uuid4())
-        )
+        correlation_id = select_correlation_id(request.headers.get("x-correlation-id"))
         request.state.correlation_id = correlation_id
         context_token = set_correlation_id(correlation_id)
         try:
@@ -129,6 +125,11 @@ def create_app(
             },
         )
         return response
+
+    app.add_middleware(
+        RequestBodyLimitMiddleware,
+        max_body_bytes=current_settings.max_request_body_bytes,
+    )
 
     @app.get(
         "/health",

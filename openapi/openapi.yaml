@@ -80,6 +80,7 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "413": {$ref: "#/components/responses/PayloadTooLarge"}
         "422": {$ref: "#/components/responses/ValidationError"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
   /v1/me:
     get:
       tags: [Identity]
@@ -754,6 +755,7 @@ paths:
         "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
         "422": {$ref: "#/components/responses/ValidationError"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
         "503": {$ref: "#/components/responses/ServiceUnavailable"}
   /v1/leases:
     post:
@@ -895,6 +897,7 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "404": {$ref: "#/components/responses/NotFound"}
         "422": {$ref: "#/components/responses/ValidationError"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
         "503": {$ref: "#/components/responses/ServiceUnavailable"}
 components:
   securitySchemes:
@@ -1048,6 +1051,16 @@ components:
       description: The request body exceeds the configured size limit.
       headers:
         x-correlation-id: {$ref: "#/components/headers/CorrelationId"}
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    TooManyRequests:
+      description: The caller has exhausted a security-sensitive request limit.
+      headers:
+        x-correlation-id: {$ref: "#/components/headers/CorrelationId"}
+        Retry-After:
+          description: Seconds until the current rate-limit window expires.
+          schema: {type: integer, minimum: 1}
       content:
         application/problem+json:
           schema: {$ref: "#/components/schemas/Problem"}

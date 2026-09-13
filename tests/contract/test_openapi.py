@@ -65,6 +65,7 @@ def test_every_documented_error_response_has_a_problem_body() -> None:
         "Conflict",
         "ValidationError",
         "PayloadTooLarge",
+        "TooManyRequests",
         "ServiceUnavailable",
     ]:
         assert responses[name]["content"]["application/problem+json"]["schema"] == {

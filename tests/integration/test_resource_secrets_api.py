@@ -12,11 +12,13 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import text
 
+from shepherd_rm.application import create_app
 from shepherd_rm.catalog.database import catalog_transaction
 from shepherd_rm.catalog.persistence import set_resource_grant
 from shepherd_rm.database import transaction
 from shepherd_rm.leasing.database import leasing_transaction
 from shepherd_rm.leasing.persistence import end_lease
+from shepherd_rm.rate_limits import principal_subject
 from shepherd_rm.resource_secrets.crypto import SecretCipher
 from shepherd_rm.resource_secrets.database import resource_secret_transaction
 from shepherd_rm.resource_secrets.persistence import access_lease_secret
@@ -568,3 +570,58 @@ async def test_secret_administration_requires_an_administrator(
 
     assert listed.status_code == 403
     assert created.status_code == 403
+
+
+async def test_secret_access_rate_limit_is_shared_through_postgresql(
+    identity_client: httpx.AsyncClient, identity_environment: IdentityEnvironment
+) -> None:
+    """A second explicit access in one-attempt window returns 429 without material."""
+    resource = await create_lease_resource(
+        identity_client, identity_environment, "secret-rate-limit"
+    )
+    value = "rate-limited-secret-canary"
+    secret = await create_secret(
+        identity_client,
+        identity_environment,
+        resource["id"],
+        name="rate-limited-secret",
+        material={"mode": "Managed", "value": value},
+    )
+    settings = identity_environment.settings.model_copy(
+        update={
+            "secret_access_rate_limit_attempts": 1,
+            "secret_access_rate_limit_window_seconds": 60,
+        }
+    )
+    app = create_app(settings=settings)
+    subject_hash = principal_subject(identity_environment.admin_id)
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            path = f"/v1/resources/{resource['id']}/secrets/{secret['id']}/access"
+            first = await client.post(
+                path,
+                headers=identity_environment.authorization("admin"),
+            )
+            limited = await client.post(
+                path,
+                headers={
+                    **identity_environment.authorization("admin"),
+                    "x-correlation-id": "limited-secret-access",
+                },
+            )
+    finally:
+        async with transaction(settings) as connection:
+            await connection.execute(
+                "DELETE FROM rate_limit_windows WHERE scope = %s AND subject_hash = %s",
+                ("secret_access", subject_hash),
+            )
+
+    assert first.status_code == 200
+    assert limited.status_code == 429
+    assert limited.headers["retry-after"].isdigit()
+    assert limited.headers["x-correlation-id"] == "limited-secret-access"
+    assert value not in limited.text
+    assert limited.json()["detail"] == "Too many secret access attempts"

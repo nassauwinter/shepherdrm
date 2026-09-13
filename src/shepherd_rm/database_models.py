@@ -96,6 +96,21 @@ class ApiToken(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
 
+class RateLimitWindow(Base):
+    __tablename__ = "rate_limit_windows"
+    __table_args__ = (
+        CheckConstraint("attempts > 0", name="attempts_positive"),
+        CheckConstraint("expires_at > window_started_at", name="expiration_after_start"),
+        Index("ix_rate_limit_windows_expires_at", "expires_at"),
+    )
+
+    scope: Mapped[str] = mapped_column(String(64), primary_key=True)
+    subject_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer)
+
+
 class Group(TimestampMixin, Base):
     __tablename__ = "groups"
 

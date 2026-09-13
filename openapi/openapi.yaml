@@ -1,0 +1,1496 @@
+openapi: 3.1.0
+info:
+  title: Shepherd RM API
+  summary: Resource leasing and management for people and automation
+  description: |
+    The public HTTP contract for Shepherd RM. Product endpoints are versioned
+    under `/v1`; operational health endpoints are intentionally unversioned.
+  version: 0.1.0
+  license:
+    name: Apache License 2.0
+    identifier: Apache-2.0
+servers:
+  - url: http://localhost:8000
+    description: Local development
+tags:
+  - name: Operations
+    description: Service health and readiness
+  - name: Identity
+    description: Authentication and identity administration
+  - name: Resources
+    description: Resource discovery and catalog administration
+paths:
+  /health:
+    get:
+      tags: [Operations]
+      summary: Check service liveness
+      description: Reports whether the HTTP process is running.
+      operationId: getHealth
+      responses:
+        "200":
+          description: The service is alive.
+          headers:
+            x-correlation-id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /ready:
+    get:
+      tags: [Operations]
+      summary: Check service readiness
+      description: Reports whether the service can reach PostgreSQL and serve requests.
+      operationId: getReadiness
+      responses:
+        "200":
+          description: The service is ready.
+          headers:
+            x-correlation-id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+        "503":
+          description: The service is not ready.
+          headers:
+            x-correlation-id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/auth/login:
+    post:
+      tags: [Identity]
+      summary: Authenticate a local user
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/LoginRequest"}
+      responses:
+        "200":
+          description: A short-lived bearer token.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LoginResponse"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/me:
+    get:
+      tags: [Identity]
+      summary: Get the authenticated principal
+      operationId: getMe
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: The authenticated principal.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Principal"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /v1/me/password:
+    put:
+      tags: [Identity]
+      summary: Change the authenticated user's password
+      operationId: changeMyPassword
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/Password"}
+      responses:
+        "204": {description: Password changed.}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/me/api-tokens:
+    post:
+      tags: [Identity]
+      summary: Create an API token for the authenticated principal
+      operationId: createMyToken
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/Token"}
+      responses:
+        "201":
+          description: Token metadata and its one-time plaintext value.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TokenIssued"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    get:
+      tags: [Identity]
+      summary: List API tokens for the authenticated principal
+      operationId: listMyTokens
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Token metadata without token values.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/Token"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /v1/me/api-tokens/{token_id}:
+    parameters:
+      - {$ref: "#/components/parameters/TokenId"}
+    delete:
+      tags: [Identity]
+      summary: Revoke one of the authenticated principal's tokens
+      operationId: revokeMyToken
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: Token revoked.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/users:
+    post:
+      tags: [Identity]
+      summary: Create a user
+      operationId: createUser
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/Principal"}
+      responses:
+        "201": {$ref: "#/components/responses/Principal"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    get:
+      tags: [Identity]
+      summary: List users
+      operationId: listUsers
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/PrincipalList"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+  /v1/users/{user_id}:
+    parameters:
+      - {$ref: "#/components/parameters/UserId"}
+    get:
+      tags: [Identity]
+      summary: Get a user
+      operationId: getUser
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Principal"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    patch:
+      tags: [Identity]
+      summary: Update a user
+      operationId: updateUser
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/PrincipalUpdate"}
+      responses:
+        "200": {$ref: "#/components/responses/Principal"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [Identity]
+      summary: Archive a user
+      operationId: archiveUser
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: User archived.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/users/{user_id}/password:
+    parameters:
+      - {$ref: "#/components/parameters/UserId"}
+    put:
+      tags: [Identity]
+      summary: Reset a user's password
+      operationId: resetUserPassword
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/Password"}
+      responses:
+        "204": {description: Password reset.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/service-identities:
+    post:
+      tags: [Identity]
+      summary: Create a service identity
+      operationId: createServiceIdentity
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/Principal"}
+      responses:
+        "201": {$ref: "#/components/responses/Principal"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    get:
+      tags: [Identity]
+      summary: List service identities
+      operationId: listServiceIdentities
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/PrincipalList"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+  /v1/service-identities/{identity_id}:
+    parameters:
+      - {$ref: "#/components/parameters/IdentityId"}
+    get:
+      tags: [Identity]
+      summary: Get a service identity
+      operationId: getServiceIdentity
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Principal"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    patch:
+      tags: [Identity]
+      summary: Update a service identity
+      operationId: updateServiceIdentity
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/PrincipalUpdate"}
+      responses:
+        "200": {$ref: "#/components/responses/Principal"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [Identity]
+      summary: Archive a service identity
+      operationId: archiveServiceIdentity
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: Service identity archived.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/service-identities/{identity_id}/api-tokens:
+    parameters:
+      - {$ref: "#/components/parameters/IdentityId"}
+    post:
+      tags: [Identity]
+      summary: Create a service-identity token
+      operationId: createServiceToken
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/Token"}
+      responses:
+        "201":
+          description: Token metadata and its one-time plaintext value.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TokenIssued"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    get:
+      tags: [Identity]
+      summary: List service-identity tokens
+      operationId: listServiceTokens
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Token metadata without token values.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/Token"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/service-identities/{identity_id}/api-tokens/{token_id}:
+    parameters:
+      - {$ref: "#/components/parameters/IdentityId"}
+      - {$ref: "#/components/parameters/TokenId"}
+    delete:
+      tags: [Identity]
+      summary: Revoke a service-identity token
+      operationId: revokeServiceToken
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: Token revoked.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/groups:
+    post:
+      tags: [Identity]
+      summary: Create a group
+      operationId: createGroup
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/GroupCreate"}
+      responses:
+        "201": {$ref: "#/components/responses/Group"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    get:
+      tags: [Identity]
+      summary: List groups
+      operationId: listGroups
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Groups.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/Group"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+  /v1/groups/{group_id}:
+    parameters:
+      - {$ref: "#/components/parameters/GroupId"}
+    get:
+      tags: [Identity]
+      summary: Get a group
+      operationId: getGroup
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Group"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    patch:
+      tags: [Identity]
+      summary: Update a group
+      operationId: updateGroup
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/GroupUpdate"}
+      responses:
+        "200": {$ref: "#/components/responses/Group"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [Identity]
+      summary: Archive a group
+      operationId: archiveGroup
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: Group archived.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/groups/{group_id}/members/{user_id}:
+    parameters:
+      - {$ref: "#/components/parameters/GroupId"}
+      - {$ref: "#/components/parameters/UserId"}
+    put:
+      tags: [Identity]
+      summary: Add a user to a group
+      operationId: addGroupMember
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: Membership exists.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [Identity]
+      summary: Remove a user from a group
+      operationId: removeGroupMember
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: Membership removed or already absent.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources:
+    post:
+      tags: [Resources]
+      summary: Create a resource
+      operationId: createResource
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/ResourceCreate"}
+      responses:
+        "201": {$ref: "#/components/responses/Resource"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    get:
+      tags: [Resources]
+      summary: List resources matching exact criteria
+      operationId: listResources
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: type
+          in: query
+          schema: {type: string, minLength: 1, maxLength: 255}
+        - name: sharing_mode
+          in: query
+          schema: {$ref: "#/components/schemas/SharingMode"}
+        - name: operational_status
+          in: query
+          schema: {$ref: "#/components/schemas/OperationalStatus"}
+        - name: available
+          in: query
+          schema: {type: boolean}
+        - name: label
+          in: query
+          description: Repeat this parameter with key=value values for exact label matching.
+          schema:
+            type: array
+            items: {type: string}
+          style: form
+          explode: true
+        - name: include_archived
+          in: query
+          description: Include archived resources; administrator permission is required.
+          schema: {type: boolean, default: false}
+        - {$ref: "#/components/parameters/Offset"}
+        - {$ref: "#/components/parameters/Limit"}
+      responses:
+        "200": {$ref: "#/components/responses/ResourcePage"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}:
+    parameters:
+      - {$ref: "#/components/parameters/ResourceId"}
+    get:
+      tags: [Resources]
+      summary: Get a resource
+      operationId: getResource
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Resource"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    patch:
+      tags: [Resources]
+      summary: Update resource metadata
+      operationId: updateResource
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/ResourceUpdate"}
+      responses:
+        "200": {$ref: "#/components/responses/Resource"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [Resources]
+      summary: Archive a resource
+      operationId: archiveResource
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: Resource archived or already archived.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}/disable:
+    parameters: [{$ref: "#/components/parameters/ResourceId"}]
+    post:
+      tags: [Resources]
+      summary: Disable a resource
+      operationId: disableResource
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Resource"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}/enable:
+    parameters: [{$ref: "#/components/parameters/ResourceId"}]
+    post:
+      tags: [Resources]
+      summary: Enable a disabled resource
+      operationId: enableResource
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Resource"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}/quarantine:
+    parameters: [{$ref: "#/components/parameters/ResourceId"}]
+    post:
+      tags: [Resources]
+      summary: Quarantine a resource
+      operationId: quarantineResource
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Resource"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}/recover:
+    parameters: [{$ref: "#/components/parameters/ResourceId"}]
+    post:
+      tags: [Resources]
+      summary: Recover a quarantined resource
+      operationId: recoverResource
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Resource"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}/access:
+    parameters: [{$ref: "#/components/parameters/ResourceId"}]
+    get:
+      tags: [Resources]
+      summary: List resource access grants
+      operationId: getResourceAccess
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Direct principal and group grants.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ResourceAccess"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}/access/principals/{target_id}:
+    parameters:
+      - {$ref: "#/components/parameters/ResourceId"}
+      - {$ref: "#/components/parameters/AccessTargetId"}
+    put:
+      tags: [Resources]
+      summary: Grant a principal access to a restricted resource
+      operationId: grantResourcePrincipalAccess
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: The direct principal grant exists.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [Resources]
+      summary: Revoke a principal's direct resource access
+      operationId: revokeResourcePrincipalAccess
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: The direct principal grant is absent.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}/access/groups/{target_id}:
+    parameters:
+      - {$ref: "#/components/parameters/ResourceId"}
+      - {$ref: "#/components/parameters/AccessTargetId"}
+    put:
+      tags: [Resources]
+      summary: Grant a group access to a restricted resource
+      operationId: grantResourceGroupAccess
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: The group grant exists.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    delete:
+      tags: [Resources]
+      summary: Revoke a group's resource access
+      operationId: revokeResourceGroupAccess
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: The group grant is absent.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}/secrets:
+    parameters: [{$ref: "#/components/parameters/ResourceId"}]
+    post:
+      tags: [Resource secrets]
+      summary: Create resource-secret metadata and material
+      operationId: createResourceSecret
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/ResourceSecretCreate"}
+      responses:
+        "201": {$ref: "#/components/responses/ResourceSecretMetadata"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+    get:
+      tags: [Resource secrets]
+      summary: List safe resource-secret metadata
+      operationId: listResourceSecrets
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Secret descriptors without managed values or external references.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/ResourceSecretMetadata"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}/secrets/{secret_id}:
+    parameters:
+      - {$ref: "#/components/parameters/ResourceId"}
+      - {$ref: "#/components/parameters/SecretId"}
+    get:
+      tags: [Resource secrets]
+      summary: Get safe resource-secret metadata
+      operationId: getResourceSecret
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/ResourceSecretMetadata"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    patch:
+      tags: [Resource secrets]
+      summary: Update metadata or atomically replace secret material
+      operationId: updateResourceSecret
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/ResourceSecretUpdate"}
+      responses:
+        "200": {$ref: "#/components/responses/ResourceSecretMetadata"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+    delete:
+      tags: [Resource secrets]
+      summary: Permanently delete secret material
+      operationId: deleteResourceSecret
+      security: [{bearerAuth: []}]
+      responses:
+        "204": {description: The resource secret is absent.}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/resources/{resource_id}/secrets/{secret_id}/access:
+    parameters:
+      - {$ref: "#/components/parameters/ResourceId"}
+      - {$ref: "#/components/parameters/SecretId"}
+    post:
+      tags: [Resource secrets]
+      summary: Explicitly access secret material as an administrator
+      operationId: accessResourceSecret
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/SecretAccess"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+  /v1/leases:
+    post:
+      tags: [Leases]
+      summary: Acquire a matching visible resource
+      operationId: acquireLease
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 255}
+      requestBody: {$ref: "#/components/requestBodies/LeaseCreate"}
+      responses:
+        "201": {$ref: "#/components/responses/Lease"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    get:
+      tags: [Leases]
+      summary: List authorized leases
+      operationId: listLeases
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: resource_id
+          in: query
+          schema: {type: string, format: uuid}
+        - name: state
+          in: query
+          schema: {$ref: "#/components/schemas/LeaseState"}
+        - name: acquired_by
+          in: query
+          schema: {type: string, format: uuid}
+        - name: consumer
+          in: query
+          schema: {type: string, minLength: 1, maxLength: 500}
+        - name: acquired_after
+          in: query
+          schema: {type: string, format: date-time}
+        - name: acquired_before
+          in: query
+          schema: {type: string, format: date-time}
+        - name: expires_after
+          in: query
+          schema: {type: string, format: date-time}
+        - name: expires_before
+          in: query
+          schema: {type: string, format: date-time}
+        - {$ref: "#/components/parameters/Offset"}
+        - {$ref: "#/components/parameters/Limit"}
+      responses:
+        "200": {$ref: "#/components/responses/LeasePage"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/leases/{lease_id}:
+    parameters: [{$ref: "#/components/parameters/LeaseId"}]
+    get:
+      tags: [Leases]
+      summary: Get an authorized lease
+      operationId: getLease
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Lease"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/leases/{lease_id}/renew:
+    parameters: [{$ref: "#/components/parameters/LeaseId"}]
+    post:
+      tags: [Leases]
+      summary: Renew an active owned lease
+      operationId: renewLease
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: "#/components/requestBodies/LeaseRenew"}
+      responses:
+        "200": {$ref: "#/components/responses/Lease"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/leases/{lease_id}/release:
+    parameters: [{$ref: "#/components/parameters/LeaseId"}]
+    post:
+      tags: [Leases]
+      summary: Release an owned lease
+      operationId: releaseLease
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Lease"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/leases/{lease_id}/revoke:
+    parameters: [{$ref: "#/components/parameters/LeaseId"}]
+    post:
+      tags: [Leases]
+      summary: Administratively revoke a lease
+      operationId: revokeLease
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Lease"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/leases/{lease_id}/secrets:
+    parameters: [{$ref: "#/components/parameters/LeaseId"}]
+    get:
+      tags: [Resource secrets]
+      summary: List secret descriptors through an active authorized lease
+      description: Regular lease owners must also retain current visibility of the resource.
+      operationId: listLeaseSecrets
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Secret descriptors for the leased resource without material.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/ResourceSecretMetadata"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /v1/leases/{lease_id}/secrets/{secret_id}/access:
+    parameters:
+      - {$ref: "#/components/parameters/LeaseId"}
+      - {$ref: "#/components/parameters/SecretId"}
+    post:
+      tags: [Resource secrets]
+      summary: Access secret material through an active authorized lease
+      description: Regular lease owners must also retain current visibility of the resource.
+      operationId: accessLeaseSecret
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {$ref: "#/components/responses/SecretAccess"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    UserId:
+      name: user_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    IdentityId:
+      name: identity_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    GroupId:
+      name: group_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    TokenId:
+      name: token_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    ResourceId:
+      name: resource_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    LeaseId:
+      name: lease_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    SecretId:
+      name: secret_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    AccessTargetId:
+      name: target_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    Offset:
+      name: offset
+      in: query
+      schema: {type: integer, minimum: 0, default: 0}
+    Limit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+  requestBodies:
+    Password:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/PasswordRequest"}
+    Principal:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/PrincipalCreate"}
+    PrincipalUpdate:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/PrincipalUpdate"}
+    Token:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/TokenCreate"}
+    ResourceCreate:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ResourceCreate"}
+    ResourceUpdate:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ResourceUpdate"}
+    LeaseCreate:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/LeaseCreate"}
+    LeaseRenew:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/LeaseRenew"}
+    ResourceSecretCreate:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ResourceSecretCreate"}
+    ResourceSecretUpdate:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ResourceSecretUpdate"}
+  responses:
+    Unauthorized:
+      description: Authentication is required or invalid.
+      headers:
+        x-correlation-id: {$ref: "#/components/headers/CorrelationId"}
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    Forbidden:
+      description: The principal lacks administrator permission.
+      headers:
+        x-correlation-id: {$ref: "#/components/headers/CorrelationId"}
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    NotFound:
+      description: The requested record does not exist.
+      headers:
+        x-correlation-id: {$ref: "#/components/headers/CorrelationId"}
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    BadRequest:
+      description: The request is valid JSON but cannot be performed.
+      headers:
+        x-correlation-id: {$ref: "#/components/headers/CorrelationId"}
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    Conflict:
+      description: The request conflicts with the current system state.
+      headers:
+        x-correlation-id: {$ref: "#/components/headers/CorrelationId"}
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    ValidationError:
+      description: The request does not satisfy the API contract.
+      headers:
+        x-correlation-id: {$ref: "#/components/headers/CorrelationId"}
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    ServiceUnavailable:
+      description: Managed-secret encryption or decryption is not available.
+      headers:
+        x-correlation-id: {$ref: "#/components/headers/CorrelationId"}
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    Principal:
+      description: Principal details.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Principal"}
+    PrincipalList:
+      description: Principals.
+      content:
+        application/json:
+          schema:
+            type: array
+            items: {$ref: "#/components/schemas/Principal"}
+    Group:
+      description: Group details.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Group"}
+    Resource:
+      description: Resource details with derived availability.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Resource"}
+    ResourcePage:
+      description: A page of resources matching the supplied criteria.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ResourcePage"}
+    Lease:
+      description: Lease details and the selected resource.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Lease"}
+    LeasePage:
+      description: A page of leases visible to the authenticated principal.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/LeasePage"}
+    ResourceSecretMetadata:
+      description: Resource-secret metadata without sensitive material.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ResourceSecretMetadata"}
+    SecretAccess:
+      description: Sensitive material returned by an explicit authorized access operation.
+      headers:
+        Cache-Control:
+          description: Prevents storage of secret material by caches.
+          schema: {type: string, const: no-store}
+        Pragma:
+          description: Provides compatibility with older HTTP caches.
+          schema: {type: string, const: no-cache}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/SecretAccess"}
+  headers:
+    CorrelationId:
+      description: Correlates the response with logs and traces.
+      schema:
+        type: string
+  schemas:
+    SharingMode:
+      type: string
+      enum: [Exclusive, Shared]
+    OperationalStatus:
+      type: string
+      enum: [Active, Cleaning, Quarantined, Disabled]
+    VisibilityMode:
+      type: string
+      enum: [Public, Restricted]
+    ExpirationMode:
+      type: string
+      enum: [Required, Optional]
+    Labels:
+      type: object
+      maxProperties: 64
+      propertyNames: {minLength: 1, maxLength: 128}
+      additionalProperties: {type: string, maxLength: 255}
+    ResourceCreate:
+      type: object
+      additionalProperties: false
+      required: [name, type, sharing_mode]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        type: {type: string, minLength: 1, maxLength: 255}
+        sharing_mode: {$ref: "#/components/schemas/SharingMode"}
+        visibility_mode:
+          allOf: [{$ref: "#/components/schemas/VisibilityMode"}]
+          default: Restricted
+        expiration_mode:
+          allOf: [{$ref: "#/components/schemas/ExpirationMode"}]
+          default: Optional
+        default_ttl_seconds: {type: [integer, "null"], minimum: 1, maximum: 2147483647, default: null}
+        max_ttl_seconds: {type: [integer, "null"], minimum: 1, maximum: 2147483647, default: null}
+        labels: {$ref: "#/components/schemas/Labels"}
+    ResourceUpdate:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: {type: integer, minimum: 1}
+        name: {type: string, minLength: 1, maxLength: 255}
+        type: {type: string, minLength: 1, maxLength: 255}
+        sharing_mode: {$ref: "#/components/schemas/SharingMode"}
+        visibility_mode: {$ref: "#/components/schemas/VisibilityMode"}
+        expiration_mode: {$ref: "#/components/schemas/ExpirationMode"}
+        default_ttl_seconds: {type: [integer, "null"], minimum: 1, maximum: 2147483647}
+        max_ttl_seconds: {type: [integer, "null"], minimum: 1, maximum: 2147483647}
+        labels: {$ref: "#/components/schemas/Labels"}
+    Resource:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - type
+        - labels
+        - sharing_mode
+        - visibility_mode
+        - expiration_mode
+        - default_ttl_seconds
+        - max_ttl_seconds
+        - operational_status
+        - version
+        - available
+        - active_lease_count
+        - archived_at
+        - created_at
+        - updated_at
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        type: {type: string}
+        labels: {$ref: "#/components/schemas/Labels"}
+        sharing_mode: {$ref: "#/components/schemas/SharingMode"}
+        visibility_mode: {$ref: "#/components/schemas/VisibilityMode"}
+        expiration_mode: {$ref: "#/components/schemas/ExpirationMode"}
+        default_ttl_seconds: {type: [integer, "null"], minimum: 1, maximum: 2147483647}
+        max_ttl_seconds: {type: [integer, "null"], minimum: 1, maximum: 2147483647}
+        operational_status: {$ref: "#/components/schemas/OperationalStatus"}
+        version: {type: integer, minimum: 1}
+        available: {type: boolean, readOnly: true}
+        active_lease_count: {type: integer, minimum: 0, readOnly: true}
+        archived_at: {type: [string, "null"], format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ResourcePage:
+      type: object
+      additionalProperties: false
+      required: [items, offset, limit, total]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/Resource"}
+        offset: {type: integer, minimum: 0}
+        limit: {type: integer, minimum: 1, maximum: 200}
+        total: {type: integer, minimum: 0}
+    ResourceAccess:
+      type: object
+      additionalProperties: false
+      required: [principal_ids, group_ids]
+      properties:
+        principal_ids:
+          type: array
+          items: {type: string, format: uuid}
+        group_ids:
+          type: array
+          items: {type: string, format: uuid}
+    LeaseState:
+      type: string
+      enum: [Active, Released, Expired, Revoked]
+    LeaseCreate:
+      type: object
+      additionalProperties: false
+      required: [resource_type, sharing_mode]
+      properties:
+        resource_type: {type: string, minLength: 1, maxLength: 255}
+        sharing_mode: {$ref: "#/components/schemas/SharingMode"}
+        labels: {$ref: "#/components/schemas/Labels"}
+        ttl_seconds:
+          description: Omit for the resource default; null explicitly requests no expiration.
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 2147483647
+        consumer: {type: [string, "null"], minLength: 1, maxLength: 500}
+        metadata: {type: object, additionalProperties: true}
+    LeaseRenew:
+      type: object
+      additionalProperties: false
+      properties:
+        ttl_seconds:
+          description: Omit for the resource default; null explicitly requests no expiration.
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 2147483647
+    Lease:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - resource
+        - acquired_by
+        - consumer
+        - state
+        - acquired_at
+        - expires_at
+        - last_renewed_at
+        - ended_at
+        - end_reason
+        - duration_seconds
+        - metadata
+      properties:
+        id: {type: string, format: uuid}
+        resource: {$ref: "#/components/schemas/Resource"}
+        acquired_by: {type: string, format: uuid}
+        consumer: {type: [string, "null"]}
+        state: {$ref: "#/components/schemas/LeaseState"}
+        acquired_at: {type: string, format: date-time}
+        expires_at: {type: [string, "null"], format: date-time}
+        last_renewed_at: {type: [string, "null"], format: date-time}
+        ended_at: {type: [string, "null"], format: date-time}
+        end_reason:
+          type: [string, "null"]
+          enum: [Released, Expired, Revoked, null]
+        duration_seconds: {type: number, minimum: 0, readOnly: true}
+        metadata: {type: object, additionalProperties: true}
+    LeasePage:
+      type: object
+      additionalProperties: false
+      required: [items, offset, limit, total]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/Lease"}
+        offset: {type: integer, minimum: 0}
+        limit: {type: integer, minimum: 1, maximum: 200}
+        total: {type: integer, minimum: 0}
+    ManagedSecretMaterial:
+      type: object
+      additionalProperties: false
+      required: [mode, value]
+      properties:
+        mode: {type: string, const: Managed}
+        value: {type: string, minLength: 1, maxLength: 65536, writeOnly: true}
+    ExternalSecretMaterial:
+      type: object
+      additionalProperties: false
+      required: [mode, provider, reference]
+      properties:
+        mode: {type: string, const: External}
+        provider: {type: string, minLength: 1, maxLength: 255}
+        reference: {type: string, minLength: 1, maxLength: 2048, writeOnly: true}
+    SecretMaterial:
+      oneOf:
+        - {$ref: "#/components/schemas/ManagedSecretMaterial"}
+        - {$ref: "#/components/schemas/ExternalSecretMaterial"}
+      discriminator:
+        propertyName: mode
+        mapping:
+          Managed: "#/components/schemas/ManagedSecretMaterial"
+          External: "#/components/schemas/ExternalSecretMaterial"
+    ResourceSecretCreate:
+      type: object
+      additionalProperties: false
+      required: [name, material]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        description: {type: [string, "null"], maxLength: 1000}
+        material: {$ref: "#/components/schemas/SecretMaterial"}
+    ResourceSecretUpdate:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: {type: integer, minimum: 1}
+        name: {type: string, minLength: 1, maxLength: 255}
+        description: {type: [string, "null"], maxLength: 1000}
+        material: {$ref: "#/components/schemas/SecretMaterial"}
+    ResourceSecretMetadata:
+      type: object
+      additionalProperties: false
+      required: [id, resource_id, name, description, mode, version, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        resource_id: {type: string, format: uuid}
+        name: {type: string}
+        description: {type: [string, "null"]}
+        mode: {type: string, enum: [Managed, External]}
+        version: {type: integer, minimum: 1}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ManagedSecretAccess:
+      type: object
+      additionalProperties: false
+      required: [id, name, mode, value]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        mode: {type: string, const: Managed}
+        value: {type: string, readOnly: true}
+    ExternalSecretAccess:
+      type: object
+      additionalProperties: false
+      required: [id, name, mode, provider, reference]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        mode: {type: string, const: External}
+        provider: {type: string}
+        reference: {type: string, readOnly: true}
+    SecretAccess:
+      oneOf:
+        - {$ref: "#/components/schemas/ManagedSecretAccess"}
+        - {$ref: "#/components/schemas/ExternalSecretAccess"}
+      discriminator:
+        propertyName: mode
+        mapping:
+          Managed: "#/components/schemas/ManagedSecretAccess"
+          External: "#/components/schemas/ExternalSecretAccess"
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username: {type: string, minLength: 1, maxLength: 255}
+        password: {type: string, minLength: 1, maxLength: 1024, writeOnly: true}
+    LoginResponse:
+      type: object
+      additionalProperties: false
+      required: [access_token, token_type, expires_at]
+      properties:
+        access_token: {type: string}
+        token_type: {type: string, const: bearer}
+        expires_at: {type: string, format: date-time}
+    PasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [password]
+      properties:
+        password: {type: string, minLength: 12, maxLength: 1024, writeOnly: true}
+    PrincipalCreate:
+      type: object
+      additionalProperties: false
+      required: [name, display_name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        display_name: {type: string, minLength: 1, maxLength: 255}
+        role: {type: string, enum: [Admin, User], default: User}
+        password: {type: [string, "null"], minLength: 12, maxLength: 1024, writeOnly: true}
+    PrincipalUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        display_name: {type: [string, "null"], minLength: 1, maxLength: 255}
+        role: {type: [string, "null"], enum: [Admin, User, null]}
+    Principal:
+      type: object
+      additionalProperties: false
+      required: [id, kind, role, name, display_name, archived_at, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string, enum: [User, Service]}
+        role: {type: string, enum: [Admin, User]}
+        name: {type: string}
+        display_name: {type: string}
+        archived_at: {type: [string, "null"], format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    TokenCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        expires_at: {type: [string, "null"], format: date-time}
+    Token:
+      type: object
+      additionalProperties: false
+      required: [id, name, created_at, expires_at, last_used_at, revoked_at]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        created_at: {type: string, format: date-time}
+        expires_at: {type: [string, "null"], format: date-time}
+        last_used_at: {type: [string, "null"], format: date-time}
+        revoked_at: {type: [string, "null"], format: date-time}
+    TokenIssued:
+      type: object
+      additionalProperties: false
+      required: [id, name, token, created_at, expires_at, last_used_at, revoked_at]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        token: {type: string}
+        created_at: {type: string, format: date-time}
+        expires_at: {type: [string, "null"], format: date-time}
+        last_used_at: {type: [string, "null"], format: date-time}
+        revoked_at: {type: [string, "null"], format: date-time}
+    GroupCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        description: {type: [string, "null"]}
+    GroupUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        description: {type: [string, "null"]}
+    Group:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, archived_at, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        description: {type: [string, "null"]}
+        archived_at: {type: [string, "null"], format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+          examples: [ok]
+    ReadinessResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ready
+          examples: [ready]
+    Problem:
+      type: object
+      description: Problem Details response compatible with RFC 9457.
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          default: about:blank
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 100
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        correlation_id:
+          type: string
+      additionalProperties: true

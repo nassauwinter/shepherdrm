@@ -8,7 +8,22 @@ version = "0.1.0"
 description = "Resource leasing and management for people and automation"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "alembic>=1.19.1",
+    "argon2-cffi>=25.1.0",
+    "cryptography>=46.0.0",
+    "fastapi",
+    "psycopg[binary]",
+    "pydantic-settings",
+    "pyyaml",
+    "sqlalchemy>=2.0.52",
+    "uvicorn[standard]",
+]
+
+[project.scripts]
+shepherd-rm = "shepherd_rm.main:run"
+shepherd-rm-bootstrap-admin = "shepherd_rm.identity.bootstrap:run"
+shepherd-rm-worker = "shepherd_rm.leasing.worker:run"
 
 [dependency-groups]
 dev = [
@@ -23,8 +38,16 @@ docs = [
     "sphinx-rtd-theme",
 ]
 lint = ["ruff"]
-test = ["pytest"]
-typing = ["mypy"]
+test = [
+    "httpx",
+    "openapi-spec-validator",
+    "pytest",
+    "pyyaml",
+]
+typing = [
+    "mypy",
+    "types-pyyaml",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -32,6 +55,9 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "integration: tests requiring external services",
+]
 
 [tool.ruff]
 target-version = "py312"

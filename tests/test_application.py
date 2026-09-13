@@ -162,3 +162,28 @@ async def test_streamed_oversized_request_returns_safe_problem() -> None:
     assert response.status_code == 413
     assert response.headers["x-correlation-id"] == "streamed-request"
     assert secret.decode() not in response.text
+
+
+@pytest.mark.anyio
+async def test_malformed_authorization_and_hostile_correlation_are_not_reflected() -> None:
+    """Rejected security headers produce a generated correlation ID without reflecting canaries."""
+    bearer_canary = "bearer-token-canary"
+    correlation_canary = "correlation/canary"
+    app = create_app(readiness_check=ready)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get(
+            "/v1/me",
+            headers={
+                "Authorization": bearer_canary,
+                "x-correlation-id": correlation_canary,
+            },
+        )
+
+    assert response.status_code == 401
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.headers["x-correlation-id"] != correlation_canary
+    assert bearer_canary not in response.text
+    assert correlation_canary not in response.text

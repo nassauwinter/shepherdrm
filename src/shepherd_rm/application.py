@@ -114,6 +114,9 @@ def create_app(
         finally:
             reset_correlation_id(context_token)
         response.headers["x-correlation-id"] = correlation_id
+        if request.url.path.endswith("/access") and "/secrets/" in request.url.path:
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Pragma"] = "no-cache"
         LOGGER.info(
             "request completed",
             extra={

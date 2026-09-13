@@ -12,7 +12,7 @@ proxy to untrusted networks. Bind Shepherd RM's port 8000 and PostgreSQL's port
 PostgreSQL directly to the internet.
 
 The application does not use client IP addresses for authorization or rate-limit
-identity. Login limits use a one-way normalized username digest, and secret-access
+identity. Login limits use a normalized username digest, and secret-access
 limits use the authenticated principal ID, so forwarded client-address headers do
 not affect these security controls. Do not trust or forward arbitrary client
 headers beyond what the selected proxy requires. Replace inbound

@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: install test lint format format-check typecheck docs serve check db-up db-down migrate migration-check clean
+.PHONY: install test lint format format-check typecheck docs serve check db-up db-down migrate migration-check image-check clean
 
 install:
 	$(PYTHON) scripts/dev.py install
@@ -39,6 +39,9 @@ migrate:
 
 migration-check:
 	$(PYTHON) scripts/dev.py migration-check
+
+image-check:
+	$(PYTHON) scripts/dev.py image-check
 
 clean:
 	$(PYTHON) scripts/dev.py clean

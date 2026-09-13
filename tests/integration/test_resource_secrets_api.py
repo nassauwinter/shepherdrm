@@ -145,6 +145,40 @@ async def test_explicit_administrator_access_decrypts_and_audits_managed_materia
     assert audit is not None and value not in audit[0]
 
 
+async def test_invalid_ciphertext_returns_safe_problem_without_stored_material(
+    identity_client: httpx.AsyncClient, identity_environment: IdentityEnvironment
+) -> None:
+    """Corrupt managed ciphertext returns a generic 500 without reflecting stored bytes."""
+    resource = await create_lease_resource(
+        identity_client, identity_environment, "secret-invalid-ciphertext"
+    )
+    secret = await create_secret(
+        identity_client,
+        identity_environment,
+        resource["id"],
+        name="invalid-ciphertext",
+        material={"mode": "Managed", "value": "original-secret-value"},
+    )
+    ciphertext_canary = b"invalid-ciphertext-canary"
+    async with transaction(identity_environment.settings) as connection:
+        await connection.execute(
+            "UPDATE resource_secrets SET encrypted_value = %s WHERE id = %s",
+            (ciphertext_canary, uuid.UUID(secret["id"])),
+        )
+
+    response = await identity_client.post(
+        f"/v1/resources/{resource['id']}/secrets/{secret['id']}/access",
+        headers=identity_environment.authorization("admin"),
+    )
+
+    assert response.status_code == 500
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["pragma"] == "no-cache"
+    assert ciphertext_canary.decode() not in response.text
+    assert response.json()["detail"] == "Managed secret could not be accessed"
+
+
 async def test_external_reference_is_returned_only_by_explicit_access(
     identity_client: httpx.AsyncClient, identity_environment: IdentityEnvironment
 ) -> None:
@@ -248,7 +282,12 @@ async def test_lease_owner_discovers_and_accesses_secret_but_another_user_cannot
     assert "value" not in listed.json()[0]
     assert accessed.status_code == 200
     assert accessed.json()["value"] == "lease-only-value"
+    assert accessed.headers["cache-control"] == "no-store"
+    assert accessed.headers["pragma"] == "no-cache"
     assert denied.status_code == 404
+    assert denied.headers["cache-control"] == "no-store"
+    assert denied.headers["pragma"] == "no-cache"
+    assert "lease-only-value" not in denied.text
 
 
 async def test_ended_or_overdue_lease_cannot_access_secret_material(

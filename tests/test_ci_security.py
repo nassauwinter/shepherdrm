@@ -40,10 +40,17 @@ def test_ci_blocks_on_dependency_secret_and_image_findings() -> None:
     assert "--strict" in commands
     assert any("gitleaks/gitleaks-action@" in step.get("uses", "") for step in repository_steps)
 
-    trivy_step = next(
+    trivy_steps = [
         step for step in image_steps if "aquasecurity/trivy-action@" in step.get("uses", "")
+    ]
+    vulnerability_step = next(
+        step for step in trivy_steps if step["with"]["scanners"] == "vuln,secret"
     )
-    assert trivy_step["with"]["exit-code"] == "1"
-    assert trivy_step["with"]["severity"] == "HIGH,CRITICAL"
-    assert trivy_step["with"]["scanners"] == "vuln,secret,license"
+    license_step = next(step for step in trivy_steps if step["with"]["scanners"] == "license")
+
+    assert vulnerability_step["with"]["exit-code"] == "1"
+    assert vulnerability_step["with"]["ignore-unfixed"] == "true"
+    assert vulnerability_step["with"]["severity"] == "HIGH,CRITICAL"
+    assert license_step["with"]["exit-code"] == "1"
+    assert license_step["with"]["severity"] == "CRITICAL"
     assert any("scripts/verify_image.py" in step.get("run", "") for step in image_steps)

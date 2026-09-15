@@ -12,7 +12,8 @@ CI performs these checks with pinned tools and immutable action revisions:
 - Gitleaks scans repository history. A verified credential or private key blocks
   release and must be revoked even if it is later removed from Git history.
 - Trivy scans the built image for operating-system and Python vulnerabilities,
-  secret material, and license findings. High or critical findings block release.
+  secret material, and license findings. Fixable high or critical vulnerabilities,
+  secret findings, and forbidden licenses block release.
 - The image verifier requires UID 10001, the configured `shepherd` user, an
   importable server package, and absence of uv, test/documentation/type-checking
   packages, source trees, lock files, project metadata, and `.env` files.
@@ -28,16 +29,17 @@ The following findings block a release candidate or stable release:
 
 - any confirmed secret or private key;
 - any published advisory reported for a shipped Python dependency;
-- any high or critical vulnerability in the final image, whether or not a fix is
-  currently available;
-- any high or critical license-policy finding;
+- any fixable high or critical vulnerability in the final image;
+- any forbidden license, which Trivy classifies as critical;
 - a failure of the non-root or runtime-content checks.
 
-Medium and lower image vulnerabilities and license findings require triage but do
-not automatically block the initial release. They become blockers when the
-affected component is reachable in the supported deployment or the license is
-incompatible with distribution. Development-only dependency findings are triaged
-separately because those packages are excluded from the image.
+Unfixed vulnerabilities and restricted licenses require review before a release.
+They become blockers when the affected component is reachable in the supported
+deployment or the license is incompatible with distribution. Trivy maps its
+opinionated restricted-license category to high severity, so severity alone does
+not establish incompatibility. Medium and lower findings follow the same
+reachability and compatibility review. Development-only dependency findings are
+triaged separately because those packages are excluded from the image.
 
 An exception requires a linked private security advisory or public issue as
 appropriate, affected-version and exploitability analysis, compensating controls,

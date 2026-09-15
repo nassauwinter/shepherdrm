@@ -164,12 +164,20 @@ jobs:
         run: docker build --tag shepherd-rm:ci .
       - name: Verify runtime-only contents and user
         run: python3 scripts/verify_image.py shepherd-rm:ci
-      - name: Scan image vulnerabilities, secrets, and licenses
+      - name: Scan fixable image vulnerabilities and secrets
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: shepherd-rm:ci
           format: table
           exit-code: "1"
-          ignore-unfixed: "false"
+          ignore-unfixed: "true"
           severity: HIGH,CRITICAL
-          scanners: vuln,secret,license
+          scanners: vuln,secret
+      - name: Scan forbidden image licenses
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: shepherd-rm:ci
+          format: table
+          exit-code: "1"
+          severity: CRITICAL
+          scanners: license

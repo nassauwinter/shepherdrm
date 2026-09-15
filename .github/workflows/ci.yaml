@@ -19,7 +19,7 @@ jobs:
         python-version: ["3.12", "3.13", "3.14"]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
@@ -53,7 +53,7 @@ jobs:
           --health-retries 10
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
@@ -79,7 +79,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
@@ -99,7 +99,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
@@ -115,7 +115,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
@@ -125,3 +125,59 @@ jobs:
         run: uv sync --locked
       - name: Build documentation
         run: uv run --locked sphinx-build -W --keep-going -b html docs docs/_build/html
+
+  repository-security:
+    name: Dependency and secret scanning
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.12.5"
+          enable-cache: true
+      - name: Export locked runtime dependencies
+        run: >-
+          uv export --locked --no-dev --no-emit-project
+          --format requirements-txt
+          --output-file /tmp/shepherdrm-runtime-requirements.txt
+      - name: Audit runtime dependencies
+        run: >-
+          uvx --from pip-audit==2.10.1 pip-audit
+          --require-hashes --disable-pip --strict
+          -r /tmp/shepherdrm-runtime-requirements.txt
+      - name: Scan repository history for secrets
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  image-security:
+    name: Runtime image security
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Build runtime image
+        run: docker build --tag shepherd-rm:ci .
+      - name: Verify runtime-only contents and user
+        run: python3 scripts/verify_image.py shepherd-rm:ci
+      - name: Scan fixable image vulnerabilities and secrets
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: shepherd-rm:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: "true"
+          severity: HIGH,CRITICAL
+          scanners: vuln,secret
+      - name: Scan forbidden image licenses
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: shepherd-rm:ci
+          format: table
+          exit-code: "1"
+          severity: CRITICAL
+          scanners: license

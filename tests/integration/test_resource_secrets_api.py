@@ -12,11 +12,13 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import text
 
+from shepherd_rm.application import create_app
 from shepherd_rm.catalog.database import catalog_transaction
 from shepherd_rm.catalog.persistence import set_resource_grant
 from shepherd_rm.database import transaction
 from shepherd_rm.leasing.database import leasing_transaction
 from shepherd_rm.leasing.persistence import end_lease
+from shepherd_rm.rate_limits import principal_subject
 from shepherd_rm.resource_secrets.crypto import SecretCipher
 from shepherd_rm.resource_secrets.database import resource_secret_transaction
 from shepherd_rm.resource_secrets.persistence import access_lease_secret
@@ -143,6 +145,40 @@ async def test_explicit_administrator_access_decrypts_and_audits_managed_materia
     assert audit is not None and value not in audit[0]
 
 
+async def test_invalid_ciphertext_returns_safe_problem_without_stored_material(
+    identity_client: httpx.AsyncClient, identity_environment: IdentityEnvironment
+) -> None:
+    """Corrupt managed ciphertext returns a generic 500 without reflecting stored bytes."""
+    resource = await create_lease_resource(
+        identity_client, identity_environment, "secret-invalid-ciphertext"
+    )
+    secret = await create_secret(
+        identity_client,
+        identity_environment,
+        resource["id"],
+        name="invalid-ciphertext",
+        material={"mode": "Managed", "value": "original-secret-value"},
+    )
+    ciphertext_canary = b"invalid-ciphertext-canary"
+    async with transaction(identity_environment.settings) as connection:
+        await connection.execute(
+            "UPDATE resource_secrets SET encrypted_value = %s WHERE id = %s",
+            (ciphertext_canary, uuid.UUID(secret["id"])),
+        )
+
+    response = await identity_client.post(
+        f"/v1/resources/{resource['id']}/secrets/{secret['id']}/access",
+        headers=identity_environment.authorization("admin"),
+    )
+
+    assert response.status_code == 500
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["pragma"] == "no-cache"
+    assert ciphertext_canary.decode() not in response.text
+    assert response.json()["detail"] == "Managed secret could not be accessed"
+
+
 async def test_external_reference_is_returned_only_by_explicit_access(
     identity_client: httpx.AsyncClient, identity_environment: IdentityEnvironment
 ) -> None:
@@ -246,7 +282,12 @@ async def test_lease_owner_discovers_and_accesses_secret_but_another_user_cannot
     assert "value" not in listed.json()[0]
     assert accessed.status_code == 200
     assert accessed.json()["value"] == "lease-only-value"
+    assert accessed.headers["cache-control"] == "no-store"
+    assert accessed.headers["pragma"] == "no-cache"
     assert denied.status_code == 404
+    assert denied.headers["cache-control"] == "no-store"
+    assert denied.headers["pragma"] == "no-cache"
+    assert "lease-only-value" not in denied.text
 
 
 async def test_ended_or_overdue_lease_cannot_access_secret_material(
@@ -568,3 +609,58 @@ async def test_secret_administration_requires_an_administrator(
 
     assert listed.status_code == 403
     assert created.status_code == 403
+
+
+async def test_secret_access_rate_limit_is_shared_through_postgresql(
+    identity_client: httpx.AsyncClient, identity_environment: IdentityEnvironment
+) -> None:
+    """A second explicit access in one-attempt window returns 429 without material."""
+    resource = await create_lease_resource(
+        identity_client, identity_environment, "secret-rate-limit"
+    )
+    value = "rate-limited-secret-canary"
+    secret = await create_secret(
+        identity_client,
+        identity_environment,
+        resource["id"],
+        name="rate-limited-secret",
+        material={"mode": "Managed", "value": value},
+    )
+    settings = identity_environment.settings.model_copy(
+        update={
+            "secret_access_rate_limit_attempts": 1,
+            "secret_access_rate_limit_window_seconds": 60,
+        }
+    )
+    app = create_app(settings=settings)
+    subject_hash = principal_subject(identity_environment.admin_id)
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            path = f"/v1/resources/{resource['id']}/secrets/{secret['id']}/access"
+            first = await client.post(
+                path,
+                headers=identity_environment.authorization("admin"),
+            )
+            limited = await client.post(
+                path,
+                headers={
+                    **identity_environment.authorization("admin"),
+                    "x-correlation-id": "limited-secret-access",
+                },
+            )
+    finally:
+        async with transaction(settings) as connection:
+            await connection.execute(
+                "DELETE FROM rate_limit_windows WHERE scope = %s AND subject_hash = %s",
+                ("secret_access", subject_hash),
+            )
+
+    assert first.status_code == 200
+    assert limited.status_code == 429
+    assert limited.headers["retry-after"].isdigit()
+    assert limited.headers["x-correlation-id"] == "limited-secret-access"
+    assert value not in limited.text
+    assert limited.json()["detail"] == "Too many secret access attempts"

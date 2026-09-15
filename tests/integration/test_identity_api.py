@@ -13,6 +13,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 
+from shepherd_rm.application import create_app
 from shepherd_rm.config import Settings, get_settings
 from shepherd_rm.database import transaction
 from shepherd_rm.identity.authentication import (
@@ -25,6 +26,7 @@ from shepherd_rm.identity.bootstrap import bootstrap_administrator
 from shepherd_rm.identity.database import identity_transaction
 from shepherd_rm.identity.models import PrincipalCreate
 from shepherd_rm.identity.persistence import create_principal
+from shepherd_rm.rate_limits import login_subject
 from tests.integration.support import IdentityEnvironment, database_url_for_schema
 
 
@@ -107,6 +109,52 @@ async def test_login_rejects_credentials_without_disclosing_account_state(
     assert response.status_code == 401
     assert response.headers["content-type"] == "application/problem+json"
     assert response.json()["detail"] == "Invalid username or password"
+
+
+@pytest.mark.anyio
+@pytest.mark.integration
+async def test_login_rate_limit_is_shared_through_postgresql(
+    identity_environment: IdentityEnvironment,
+) -> None:
+    """A second login in one-attempt window returns 429 with a retry interval."""
+    username = identity_environment.name("user")
+    subject_hash = login_subject(username)
+    settings = identity_environment.settings.model_copy(
+        update={"login_rate_limit_attempts": 1, "login_rate_limit_window_seconds": 300}
+    )
+    first_app = create_app(settings=settings)
+    second_app = create_app(settings=settings)
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=first_app),
+            base_url="http://test",
+        ) as first_client:
+            first = await first_client.post(
+                "/v1/auth/login",
+                json={"username": username, "password": "incorrect-password"},
+            )
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=second_app),
+            base_url="http://test",
+        ) as second_client:
+            limited = await second_client.post(
+                "/v1/auth/login",
+                json={"username": username, "password": "secret-canary"},
+                headers={"x-correlation-id": "limited-login"},
+            )
+    finally:
+        async with transaction(settings) as connection:
+            await connection.execute(
+                "DELETE FROM rate_limit_windows WHERE scope = %s AND subject_hash = %s",
+                ("login", subject_hash),
+            )
+
+    assert first.status_code == 401
+    assert limited.status_code == 429
+    assert limited.headers["retry-after"].isdigit()
+    assert limited.headers["x-correlation-id"] == "limited-login"
+    assert "secret-canary" not in limited.text
+    assert limited.json()["detail"] == "Too many login attempts"
 
 
 @pytest.mark.anyio

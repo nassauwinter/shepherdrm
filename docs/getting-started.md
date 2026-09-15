@@ -2,6 +2,19 @@
 
 Shepherd RM is in its initial development stage. The current executable foundation can be started with Docker Compose:
 
+## Supported initial-release platform
+
+The supported `0.1.0` deployment is the published `linux/amd64` container image,
+which runs Python 3.12 and connects to PostgreSQL 17. Source development and CI
+also exercise Python 3.13 and 3.14, but those additional interpreters are a test
+matrix rather than separate supported deployment artifacts.
+
+Requests are limited to 1 MiB by default. Operators can change the limit with
+`SHEPHERD_MAX_REQUEST_BODY_BYTES`; oversized requests receive a `413` problem
+response without reflecting request content.
+
+## Start the service
+
 ```bash
 docker compose up --build
 ```

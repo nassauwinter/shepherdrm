@@ -74,6 +74,13 @@ def migration_check() -> None:
     uv_run("alembic", "check")
 
 
+def image_check() -> None:
+    """Build and verify the supported runtime-only container image."""
+    image = "shepherd-rm:check"
+    run(("docker", "build", "--tag", image, "."))
+    run(("python3", "scripts/verify_image.py", image))
+
+
 def clean() -> None:
     for relative_path in (
         ".pytest_cache",
@@ -101,6 +108,7 @@ TASKS: dict[str, Callable[[], None]] = {
     "db-down": db_down,
     "migrate": migrate,
     "migration-check": migration_check,
+    "image-check": image_check,
     "clean": clean,
 }
 

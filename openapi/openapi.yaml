@@ -78,7 +78,9 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/LoginResponse"}
         "401": {$ref: "#/components/responses/Unauthorized"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
         "422": {$ref: "#/components/responses/ValidationError"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
   /v1/me:
     get:
       tags: [Identity]
@@ -103,6 +105,7 @@ paths:
         "204": {description: Password changed.}
         "400": {$ref: "#/components/responses/BadRequest"}
         "401": {$ref: "#/components/responses/Unauthorized"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
         "422": {$ref: "#/components/responses/ValidationError"}
   /v1/me/api-tokens:
     post:
@@ -119,6 +122,7 @@ paths:
               schema: {$ref: "#/components/schemas/TokenIssued"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "400": {$ref: "#/components/responses/BadRequest"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
         "422": {$ref: "#/components/responses/ValidationError"}
     get:
       tags: [Identity]
@@ -160,6 +164,7 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
         "409": {$ref: "#/components/responses/Conflict"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
         "422": {$ref: "#/components/responses/ValidationError"}
     get:
       tags: [Identity]
@@ -196,6 +201,7 @@ paths:
         "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
         "422": {$ref: "#/components/responses/ValidationError"}
     delete:
       tags: [Identity]
@@ -223,6 +229,7 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
         "422": {$ref: "#/components/responses/ValidationError"}
   /v1/service-identities:
     post:
@@ -237,6 +244,7 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
         "409": {$ref: "#/components/responses/Conflict"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
         "422": {$ref: "#/components/responses/ValidationError"}
     get:
       tags: [Identity]
@@ -272,6 +280,7 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
         "422": {$ref: "#/components/responses/ValidationError"}
     delete:
       tags: [Identity]
@@ -302,6 +311,7 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
         "400": {$ref: "#/components/responses/BadRequest"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
         "422": {$ref: "#/components/responses/ValidationError"}
     get:
       tags: [Identity]
@@ -350,6 +360,7 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
         "409": {$ref: "#/components/responses/Conflict"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
         "422": {$ref: "#/components/responses/ValidationError"}
     get:
       tags: [Identity]
@@ -395,6 +406,7 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
         "422": {$ref: "#/components/responses/ValidationError"}
     delete:
       tags: [Identity]
@@ -445,6 +457,7 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "403": {$ref: "#/components/responses/Forbidden"}
         "409": {$ref: "#/components/responses/Conflict"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
         "422": {$ref: "#/components/responses/ValidationError"}
     get:
       tags: [Resources]
@@ -509,6 +522,7 @@ paths:
         "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
         "422": {$ref: "#/components/responses/ValidationError"}
     delete:
       tags: [Resources]
@@ -665,6 +679,7 @@ paths:
         "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
         "422": {$ref: "#/components/responses/ValidationError"}
         "503": {$ref: "#/components/responses/ServiceUnavailable"}
     get:
@@ -711,6 +726,7 @@ paths:
         "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
         "422": {$ref: "#/components/responses/ValidationError"}
         "503": {$ref: "#/components/responses/ServiceUnavailable"}
     delete:
@@ -739,6 +755,7 @@ paths:
         "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
         "422": {$ref: "#/components/responses/ValidationError"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
         "503": {$ref: "#/components/responses/ServiceUnavailable"}
   /v1/leases:
     post:
@@ -756,6 +773,7 @@ paths:
         "201": {$ref: "#/components/responses/Lease"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "409": {$ref: "#/components/responses/Conflict"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
         "422": {$ref: "#/components/responses/ValidationError"}
     get:
       tags: [Leases]
@@ -818,6 +836,7 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
         "422": {$ref: "#/components/responses/ValidationError"}
   /v1/leases/{lease_id}/release:
     parameters: [{$ref: "#/components/parameters/LeaseId"}]
@@ -878,6 +897,7 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "404": {$ref: "#/components/responses/NotFound"}
         "422": {$ref: "#/components/responses/ValidationError"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
         "503": {$ref: "#/components/responses/ServiceUnavailable"}
 components:
   securitySchemes:
@@ -1024,6 +1044,23 @@ components:
       description: The request does not satisfy the API contract.
       headers:
         x-correlation-id: {$ref: "#/components/headers/CorrelationId"}
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    PayloadTooLarge:
+      description: The request body exceeds the configured size limit.
+      headers:
+        x-correlation-id: {$ref: "#/components/headers/CorrelationId"}
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    TooManyRequests:
+      description: The caller has exhausted a security-sensitive request limit.
+      headers:
+        x-correlation-id: {$ref: "#/components/headers/CorrelationId"}
+        Retry-After:
+          description: Seconds until the current rate-limit window expires.
+          schema: {type: integer, minimum: 1}
       content:
         application/problem+json:
           schema: {$ref: "#/components/schemas/Problem"}

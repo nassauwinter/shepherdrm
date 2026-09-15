@@ -11,6 +11,11 @@ from sqlalchemy.exc import IntegrityError
 from shepherd_rm.config import Settings
 from shepherd_rm.identity.api.dependencies import IdentityDependencies
 from shepherd_rm.identity.authentication import AuthenticatedPrincipal
+from shepherd_rm.rate_limits import (
+    RateLimitExceeded,
+    enforce_rate_limit,
+    principal_subject,
+)
 from shepherd_rm.resource_secrets.crypto import (
     SecretCipher,
     SecretDecryptionError,
@@ -46,6 +51,26 @@ def _prevent_caching(response: Response) -> None:
     """Mark secret-bearing responses as unsuitable for client or intermediary caches."""
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
+
+
+async def _enforce_secret_access_limit(
+    settings: Settings, principal: AuthenticatedPrincipal
+) -> None:
+    """Apply one shared limit to explicit secret access by a principal."""
+    try:
+        await enforce_rate_limit(
+            settings,
+            "secret_access",
+            principal_subject(principal.principal.id),
+            settings.secret_access_rate_limit_attempts,
+            settings.secret_access_rate_limit_window_seconds,
+        )
+    except RateLimitExceeded as error:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many secret access attempts",
+            headers={"Retry-After": str(error.retry_after_seconds)},
+        ) from None
 
 
 def build_resource_secrets_router(settings: Settings) -> APIRouter:
@@ -150,6 +175,7 @@ def build_resource_secrets_router(settings: Settings) -> APIRouter:
         response: Response,
         admin: AuthenticatedPrincipal = Depends(dependencies.administrator),
     ) -> SecretAccess:
+        await _enforce_secret_access_limit(settings, admin)
         try:
             async with resource_secret_transaction(settings) as connection:
                 result = await access_resource_secret_as_admin(
@@ -188,6 +214,7 @@ def build_resource_secrets_router(settings: Settings) -> APIRouter:
         response: Response,
         principal: AuthenticatedPrincipal = Depends(dependencies.authenticated),
     ) -> SecretAccess:
+        await _enforce_secret_access_limit(settings, principal)
         try:
             async with resource_secret_transaction(settings) as connection:
                 result = await access_lease_secret(

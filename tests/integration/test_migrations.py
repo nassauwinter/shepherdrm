@@ -23,6 +23,7 @@ EXPECTED_TABLES = {
     "leases",
     "password_credentials",
     "principals",
+    "rate_limit_windows",
     "resource_group_grants",
     "resource_principal_grants",
     "resource_secrets",

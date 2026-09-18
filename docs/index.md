@@ -8,6 +8,8 @@ Shepherd RM manages reusable resources for human users, test automation, and del
 
 getting-started
 deployment
+backup-restore
+upgrading
 security-controls
 resource-catalog
 resource-secrets

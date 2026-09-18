@@ -47,6 +47,11 @@ separately from PostgreSQL: losing an encryption key makes values encrypted by
 it unrecoverable, while exposing a key together with the database exposes those
 values.
 
+The supported Compose deployment mounts the key ring and configures
+`SHEPHERD_SECRET_ENCRYPTION_KEYS_FILE`. Other orchestrators may use the same
+file-backed setting. If both forms are configured, the direct
+`SHEPHERD_SECRET_ENCRYPTION_KEYS` value takes precedence.
+
 External-only deployments may leave the key ring empty. External entries remain
 usable, but managed-secret creation, replacement, and access return `503` until
 a valid active key is configured.

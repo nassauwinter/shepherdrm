@@ -50,7 +50,17 @@ def docs() -> None:
 
 
 def serve() -> None:
-    uv_run("uvicorn", "shepherd_rm.main:app", "--reload", "--host", "127.0.0.1", "--port", "8000")
+    """Run the dev server without Uvicorn's raw-URL access logger."""
+    uv_run(
+        "uvicorn",
+        "shepherd_rm.main:app",
+        "--reload",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000",
+        "--no-access-log",
+    )
 
 
 def check() -> None:

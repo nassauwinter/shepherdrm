@@ -4,7 +4,15 @@ import ast
 import logging
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
+import httpx
+import pytest
+
+from scripts import dev
+from shepherd_rm import application, request_limits
+from shepherd_rm.application import create_app
+from shepherd_rm.config import Settings
 from shepherd_rm.logging import JsonFormatter
 
 SOURCE_ROOT = Path(__file__).parents[1] / "src" / "shepherd_rm"
@@ -77,3 +85,54 @@ def test_application_log_calls_use_static_event_names() -> None:
             assert isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str), (
                 f"{source_path}: log event names must be static strings"
             )
+
+
+@pytest.mark.anyio
+async def test_request_logs_never_include_attacker_controlled_path_segments() -> None:
+    """Matched, unmatched, and body-limit requests omit path canaries from logs."""
+    canary = "secret-path-canary"
+    app = create_app(settings=Settings(max_request_body_bytes=8))
+    with (
+        patch.object(application.LOGGER, "info") as completed_log,
+        patch.object(request_limits.LOGGER, "info") as rejected_log,
+    ):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            matched = await client.get(f"/v1/resources/{canary}")
+            unmatched = await client.get(f"/unmatched/{canary}")
+            oversized = await client.post(f"/unmatched/{canary}", content="oversized payload")
+
+    assert matched.status_code == 401
+    assert unmatched.status_code == 404
+    assert oversized.status_code == 413
+    assert completed_log.call_count == 2
+    assert rejected_log.call_count == 1
+    request_paths = [
+        call.kwargs["extra"]["path"]
+        for call in [*completed_log.call_args_list, *rejected_log.call_args_list]
+    ]
+    assert request_paths == [
+        "/v1/resources/{resource_id}",
+        "<unmatched>",
+        "<unrouted>",
+    ]
+    assert all(canary not in path for path in request_paths)
+
+
+def test_development_server_disables_raw_path_access_logs() -> None:
+    """The supported dev command disables Uvicorn's raw URL access logger."""
+    with patch.object(dev, "uv_run") as uv_run:
+        dev.serve()
+
+    uv_run.assert_called_once_with(
+        "uvicorn",
+        "shepherd_rm.main:app",
+        "--reload",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000",
+        "--no-access-log",
+    )

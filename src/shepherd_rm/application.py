@@ -11,6 +11,7 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
 
@@ -117,12 +118,14 @@ def create_app(
         if request.url.path.endswith("/access") and "/secrets/" in request.url.path:
             response.headers["Cache-Control"] = "no-store"
             response.headers["Pragma"] = "no-cache"
+        route = request.scope.get("route")
+        logged_path = route.path_format if isinstance(route, APIRoute) else "<unmatched>"
         LOGGER.info(
             "request completed",
             extra={
                 "correlation_id": correlation_id,
                 "method": request.method,
-                "path": request.url.path,
+                "path": logged_path,
                 "status_code": response.status_code,
                 "duration_ms": round((time.perf_counter() - started_at) * 1000, 3),
             },

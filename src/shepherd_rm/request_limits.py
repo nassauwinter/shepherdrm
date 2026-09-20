@@ -89,7 +89,7 @@ class RequestBodyLimitMiddleware:
             extra={
                 "correlation_id": correlation_id,
                 "method": scope.get("method"),
-                "path": scope.get("path"),
+                "path": "<unrouted>",
                 "status_code": 413,
             },
         )

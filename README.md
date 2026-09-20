@@ -67,6 +67,10 @@ Useful individual tasks include `serve`, `test`, `lint`, `format`, `typecheck`, 
 
 The Compose credentials are intended only for local development. Copy `.env.example` to `.env` to override them locally; `.env` is ignored by Git.
 
+For supported single-host deployment, backup, restore, and upgrade procedures,
+use `compose.production.yaml` and the published documentation. Production pulls
+an immutable server image and does not use the source-build Compose file.
+
 ## Documentation
 
 Documentation is built with Sphinx and MyST Markdown:

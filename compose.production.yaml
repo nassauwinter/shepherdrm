@@ -1,0 +1,125 @@
+name: shepherdrm
+
+services:
+  migrate:
+    image: ${SHEPHERD_IMAGE:?Set SHEPHERD_IMAGE to a published image digest}
+    command: alembic upgrade head
+    environment:
+      SHEPHERD_DATABASE_URL: postgresql://${POSTGRES_USER:-shepherd_rm}@postgres:5432/${POSTGRES_DB:-shepherd_rm}
+      SHEPHERD_DATABASE_PASSWORD_FILE: /run/secrets/postgres_password
+      SHEPHERD_DATABASE_CONNECT_TIMEOUT_SECONDS: ${SHEPHERD_DATABASE_CONNECT_TIMEOUT_SECONDS:-5}
+      SHEPHERD_MIGRATIONS_PATH: /app/migrations
+    secrets:
+      - postgres_password
+    networks:
+      - database
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  shepherd-rm:
+    image: ${SHEPHERD_IMAGE:?Set SHEPHERD_IMAGE to a published image digest}
+    environment:
+      SHEPHERD_DATABASE_URL: postgresql://${POSTGRES_USER:-shepherd_rm}@postgres:5432/${POSTGRES_DB:-shepherd_rm}
+      SHEPHERD_DATABASE_PASSWORD_FILE: /run/secrets/postgres_password
+      SHEPHERD_DATABASE_CONNECT_TIMEOUT_SECONDS: ${SHEPHERD_DATABASE_CONNECT_TIMEOUT_SECONDS:-5}
+      SHEPHERD_HOST: 0.0.0.0
+      SHEPHERD_PORT: 8000
+      SHEPHERD_LOG_LEVEL: ${SHEPHERD_LOG_LEVEL:-INFO}
+      SHEPHERD_MAX_REQUEST_BODY_BYTES: ${SHEPHERD_MAX_REQUEST_BODY_BYTES:-1048576}
+      SHEPHERD_LOGIN_TOKEN_TTL_SECONDS: ${SHEPHERD_LOGIN_TOKEN_TTL_SECONDS:-43200}
+      SHEPHERD_LOGIN_RATE_LIMIT_ATTEMPTS: ${SHEPHERD_LOGIN_RATE_LIMIT_ATTEMPTS:-10}
+      SHEPHERD_LOGIN_RATE_LIMIT_WINDOW_SECONDS: ${SHEPHERD_LOGIN_RATE_LIMIT_WINDOW_SECONDS:-300}
+      SHEPHERD_SECRET_ACCESS_RATE_LIMIT_ATTEMPTS: ${SHEPHERD_SECRET_ACCESS_RATE_LIMIT_ATTEMPTS:-60}
+      SHEPHERD_SECRET_ACCESS_RATE_LIMIT_WINDOW_SECONDS: ${SHEPHERD_SECRET_ACCESS_RATE_LIMIT_WINDOW_SECONDS:-60}
+      SHEPHERD_SECRET_ENCRYPTION_ACTIVE_KEY_ID: ${SHEPHERD_SECRET_ENCRYPTION_ACTIVE_KEY_ID:-}
+      SHEPHERD_SECRET_ENCRYPTION_KEYS_FILE: /run/secrets/secret_encryption_keys
+      SHEPHERD_OPENAPI_PATH: /app/openapi/openapi.yaml
+      SHEPHERD_MIGRATIONS_PATH: /app/migrations
+    secrets:
+      - postgres_password
+      - secret_encryption_keys
+    ports:
+      - "${SHEPHERD_BIND_ADDRESS:-127.0.0.1}:${SHEPHERD_PORT:-8000}:8000"
+    networks:
+      - application
+      - database
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/ready')
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  worker:
+    image: ${SHEPHERD_IMAGE:?Set SHEPHERD_IMAGE to a published image digest}
+    command: shepherd-rm-worker
+    environment:
+      SHEPHERD_DATABASE_URL: postgresql://${POSTGRES_USER:-shepherd_rm}@postgres:5432/${POSTGRES_DB:-shepherd_rm}
+      SHEPHERD_DATABASE_PASSWORD_FILE: /run/secrets/postgres_password
+      SHEPHERD_DATABASE_CONNECT_TIMEOUT_SECONDS: ${SHEPHERD_DATABASE_CONNECT_TIMEOUT_SECONDS:-5}
+      SHEPHERD_LOG_LEVEL: ${SHEPHERD_LOG_LEVEL:-INFO}
+      SHEPHERD_LEASE_EXPIRATION_POLL_SECONDS: ${SHEPHERD_LEASE_EXPIRATION_POLL_SECONDS:-1}
+      SHEPHERD_LEASE_EXPIRATION_BATCH_SIZE: ${SHEPHERD_LEASE_EXPIRATION_BATCH_SIZE:-100}
+    secrets:
+      - postgres_password
+    networks:
+      - database
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  postgres:
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-shepherd_rm}
+      POSTGRES_USER: ${POSTGRES_USER:-shepherd_rm}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    networks:
+      - database
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    volumes:
+      - shepherd_postgres_data:/var/lib/postgresql/data
+
+secrets:
+  postgres_password:
+    file: ${SHEPHERD_SECRETS_DIR:?Set SHEPHERD_SECRETS_DIR}/postgres_password
+  secret_encryption_keys:
+    file: ${SHEPHERD_SECRETS_DIR:?Set SHEPHERD_SECRETS_DIR}/secret_encryption_keys.json
+
+networks:
+  application:
+  database:
+    internal: true
+
+volumes:
+  shepherd_postgres_data:

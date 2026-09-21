@@ -41,9 +41,12 @@ services:
       SHEPHERD_SECRET_ENCRYPTION_KEYS_FILE: /run/secrets/secret_encryption_keys
       SHEPHERD_OPENAPI_PATH: /app/openapi/openapi.yaml
       SHEPHERD_MIGRATIONS_PATH: /app/migrations
+      SHEPHERD_WORKER_METRICS_PATH: /var/lib/shepherd-rm/worker-metrics.json
     secrets:
       - postgres_password
       - secret_encryption_keys
+    volumes:
+      - shepherd_runtime_state:/var/lib/shepherd-rm
     ports:
       - "${SHEPHERD_BIND_ADDRESS:-127.0.0.1}:${SHEPHERD_PORT:-8000}:8000"
     networks:
@@ -78,8 +81,11 @@ services:
       SHEPHERD_LOG_LEVEL: ${SHEPHERD_LOG_LEVEL:-INFO}
       SHEPHERD_LEASE_EXPIRATION_POLL_SECONDS: ${SHEPHERD_LEASE_EXPIRATION_POLL_SECONDS:-1}
       SHEPHERD_LEASE_EXPIRATION_BATCH_SIZE: ${SHEPHERD_LEASE_EXPIRATION_BATCH_SIZE:-100}
+      SHEPHERD_WORKER_METRICS_PATH: /var/lib/shepherd-rm/worker-metrics.json
     secrets:
       - postgres_password
+    volumes:
+      - shepherd_runtime_state:/var/lib/shepherd-rm
     networks:
       - database
     depends_on:
@@ -123,3 +129,4 @@ networks:
 
 volumes:
   shepherd_postgres_data:
+  shepherd_runtime_state:

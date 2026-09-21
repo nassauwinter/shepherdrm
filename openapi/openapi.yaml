@@ -14,7 +14,7 @@ servers:
     description: Local development
 tags:
   - name: Operations
-    description: Service health and readiness
+    description: Service health, readiness, and operator metrics
   - name: Identity
     description: Authentication and identity administration
   - name: Resources
@@ -61,6 +61,22 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+  /metrics:
+    get:
+      tags: [Operations]
+      summary: Scrape operational metrics
+      description: Returns low-cardinality Prometheus metrics to authenticated administrators.
+      operationId: getMetrics
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Current process and database-derived operational metrics.
+          content:
+            text/plain:
+              schema: {type: string}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "503": {$ref: "#/components/responses/ServiceUnavailable"}
   /v1/auth/login:
     post:
       tags: [Identity]

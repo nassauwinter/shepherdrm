@@ -28,6 +28,9 @@ services:
       SHEPHERD_SECRET_ENCRYPTION_KEYS: '${SHEPHERD_SECRET_ENCRYPTION_KEYS:-{}}'
       SHEPHERD_OPENAPI_PATH: /app/openapi/openapi.yaml
       SHEPHERD_MIGRATIONS_PATH: /app/migrations
+      SHEPHERD_WORKER_METRICS_PATH: /var/lib/shepherd-rm/worker-metrics.json
+    volumes:
+      - shepherd_runtime_state:/var/lib/shepherd-rm
     ports:
       - "${SHEPHERD_PORT:-8000}:8000"
     depends_on:
@@ -52,6 +55,9 @@ services:
       SHEPHERD_LOG_LEVEL: ${SHEPHERD_LOG_LEVEL:-INFO}
       SHEPHERD_LEASE_EXPIRATION_POLL_SECONDS: ${SHEPHERD_LEASE_EXPIRATION_POLL_SECONDS:-1}
       SHEPHERD_LEASE_EXPIRATION_BATCH_SIZE: ${SHEPHERD_LEASE_EXPIRATION_BATCH_SIZE:-100}
+      SHEPHERD_WORKER_METRICS_PATH: /var/lib/shepherd-rm/worker-metrics.json
+    volumes:
+      - shepherd_runtime_state:/var/lib/shepherd-rm
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -74,3 +80,4 @@ services:
 
 volumes:
   shepherd_postgres_data:
+  shepherd_runtime_state:

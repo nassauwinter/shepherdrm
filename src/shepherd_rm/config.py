@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     secret_access_rate_limit_window_seconds: int = Field(default=60, ge=1, le=86_400)
     lease_expiration_poll_seconds: float = Field(default=1.0, gt=0)
     lease_expiration_batch_size: int = Field(default=100, ge=1, le=1000)
+    worker_metrics_path: Path | None = None
     secret_encryption_active_key_id: str | None = None
     secret_encryption_keys: dict[str, SecretStr] = Field(default_factory=dict)
     secret_encryption_keys_file: Path | None = Field(default=None, exclude=True, repr=False)

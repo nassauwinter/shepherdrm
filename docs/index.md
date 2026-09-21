@@ -11,6 +11,7 @@ deployment
 backup-restore
 upgrading
 security-controls
+observability
 resource-catalog
 resource-secrets
 manual-testing/index

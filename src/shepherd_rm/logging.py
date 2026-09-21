@@ -15,7 +15,16 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": message,
         }
-        for field in ("correlation_id", "method", "path", "status_code", "duration_ms"):
+        for field in (
+            "correlation_id",
+            "method",
+            "path",
+            "status_code",
+            "duration_ms",
+            "expired_count",
+            "version",
+            "revision",
+        ):
             value = getattr(record, field, None)
             if value is not None:
                 entry[field] = value

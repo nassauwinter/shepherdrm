@@ -50,6 +50,9 @@ docker compose up --build
 
 The API is then available at `http://localhost:8000`, interactive documentation at `http://localhost:8000/docs`, and the authoritative contract at `http://localhost:8000/openapi.json`.
 
+Authenticated administrators can scrape low-cardinality Prometheus metrics at
+`http://localhost:8000/metrics`.
+
 For a faster development loop, start only PostgreSQL and run the API locally with reload enabled:
 
 ```bash

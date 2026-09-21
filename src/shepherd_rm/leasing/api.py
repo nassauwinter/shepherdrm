@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 from datetime import datetime
 from typing import Annotated, Literal
@@ -20,6 +21,7 @@ from shepherd_rm.leasing.persistence import (
     list_leases,
     renew_lease,
 )
+from shepherd_rm.observability import record_allocation
 
 
 def build_leasing_router(settings: Settings) -> APIRouter:
@@ -35,13 +37,29 @@ def build_leasing_router(settings: Settings) -> APIRouter:
         ],
         principal: AuthenticatedPrincipal = Depends(dependencies.authenticated),
     ) -> LeaseResponse:
-        async with leasing_transaction(settings) as connection:
-            return await acquire_lease(
-                connection,
-                request,
-                idempotency_key,
-                principal.principal.id,
-                principal.principal.role == "Admin",
+        started_at = time.perf_counter()
+        outcome = "error"
+        try:
+            async with leasing_transaction(settings) as connection:
+                lease = await acquire_lease(
+                    connection,
+                    request,
+                    idempotency_key,
+                    principal.principal.id,
+                    principal.principal.role == "Admin",
+                )
+            outcome = "acquired"
+            return lease
+        except HTTPException as error:
+            outcome = (
+                "unavailable" if error.detail == "No matching resource is available" else "rejected"
+            )
+            raise
+        finally:
+            record_allocation(
+                outcome,
+                request.sharing_mode,
+                time.perf_counter() - started_at,
             )
 
     @router.get("", response_model=LeasePage, operation_id="listLeases")

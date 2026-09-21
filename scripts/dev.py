@@ -87,7 +87,26 @@ def migration_check() -> None:
 def image_check() -> None:
     """Build and verify the supported runtime-only container image."""
     image = "shepherd-rm:check"
-    run(("docker", "build", "--tag", image, "."))
+    revision = subprocess.run(
+        ("git", "rev-parse", "HEAD"),
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    run(
+        (
+            "docker",
+            "build",
+            "--build-arg",
+            "SHEPHERD_BUILD_VERSION=0.1.0",
+            "--build-arg",
+            f"SHEPHERD_BUILD_REVISION={revision}",
+            "--tag",
+            image,
+            ".",
+        )
+    )
     run(("python3", "scripts/verify_image.py", image))
 
 

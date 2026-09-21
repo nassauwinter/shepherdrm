@@ -187,3 +187,31 @@ async def test_malformed_authorization_and_hostile_correlation_are_not_reflected
     assert response.headers["x-correlation-id"] != correlation_canary
     assert bearer_canary not in response.text
     assert correlation_canary not in response.text
+
+
+@pytest.mark.anyio
+async def test_metrics_authentication_database_outage_returns_safe_unavailable() -> None:
+    """A database outage during scrape authentication maps to the documented safe 503."""
+    token_canary = "metrics-token-canary"
+    app = create_app(
+        settings=Settings(
+            database_url="postgresql://shepherd:unused@127.0.0.1:1/shepherd",
+            database_connect_timeout_seconds=1,
+        ),
+        readiness_check=ready,
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get(
+            "/metrics",
+            headers={"Authorization": f"Bearer {token_canary}"},
+        )
+
+    assert response.status_code == 503
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.json()["detail"] == (
+        "Metrics are unavailable because PostgreSQL cannot be queried"
+    )
+    assert token_canary not in response.text

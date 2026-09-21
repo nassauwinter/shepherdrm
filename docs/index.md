@@ -12,6 +12,7 @@ backup-restore
 upgrading
 security-controls
 observability
+release-acceptance
 resource-catalog
 resource-secrets
 manual-testing/index

@@ -3,13 +3,27 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import subprocess
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def run(*command: str) -> str:
     """Run one inspection command and return its trimmed standard output."""
     result = subprocess.run(command, check=True, capture_output=True, text=True)
     return result.stdout.strip()
+
+
+def contract_manifest(root: Path) -> dict[str, str]:
+    """Hash the public contract and migration sources shipped in a release image."""
+    paths = [root / "openapi" / "openapi.yaml", *sorted((root / "migrations").rglob("*.py"))]
+    return {
+        path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in paths
+    }
 
 
 def verify_image(image: str) -> None:
@@ -60,6 +74,24 @@ import shepherd_rm
         ["docker", "run", "--rm", "--entrypoint", "python", image, "-c", runtime_check],
         check=True,
     )
+
+    manifest_script = """
+import hashlib
+import json
+import pathlib
+
+root = pathlib.Path('/app')
+paths = [root / 'openapi' / 'openapi.yaml', *sorted((root / 'migrations').rglob('*.py'))]
+print(json.dumps({
+    path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+    for path in paths
+}, sort_keys=True))
+"""
+    embedded_manifest = json.loads(
+        run("docker", "run", "--rm", "--entrypoint", "python", image, "-c", manifest_script)
+    )
+    if embedded_manifest != contract_manifest(ROOT):
+        raise RuntimeError("Image contract or migration sources differ from the release tree")
 
 
 def main() -> None:

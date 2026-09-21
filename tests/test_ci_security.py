@@ -6,13 +6,13 @@ from typing import Any
 
 import yaml
 
-WORKFLOW_PATH = Path(__file__).parents[1] / ".github" / "workflows" / "ci.yaml"
+WORKFLOWS_DIRECTORY = Path(__file__).parents[1] / ".github" / "workflows"
 PINNED_ACTION = re.compile(r"^[^@]+@[0-9a-f]{40}$")
 
 
-def load_workflow() -> dict[str, Any]:
-    """Load the committed CI workflow for structural assertions."""
-    with WORKFLOW_PATH.open(encoding="utf-8") as workflow_file:
+def load_workflow(name: str) -> dict[str, Any]:
+    """Load one committed workflow for structural assertions."""
+    with (WORKFLOWS_DIRECTORY / name).open(encoding="utf-8") as workflow_file:
         workflow = yaml.safe_load(workflow_file)
     assert isinstance(workflow, dict)
     return workflow
@@ -20,9 +20,13 @@ def load_workflow() -> dict[str, Any]:
 
 def test_all_ci_actions_are_pinned_to_commit_shas() -> None:
     """Every external action reference uses an immutable 40-character commit SHA."""
-    workflow = load_workflow()
+    workflows = [load_workflow("ci.yaml"), load_workflow("security.yaml")]
     action_references = [
-        step["uses"] for job in workflow["jobs"].values() for step in job["steps"] if "uses" in step
+        step["uses"]
+        for workflow in workflows
+        for job in workflow["jobs"].values()
+        for step in job["steps"]
+        if "uses" in step
     ]
 
     assert action_references
@@ -31,7 +35,7 @@ def test_all_ci_actions_are_pinned_to_commit_shas() -> None:
 
 def test_ci_blocks_on_dependency_secret_and_image_findings() -> None:
     """CI contains strict dependency, repository-secret, and final-image gates."""
-    jobs = load_workflow()["jobs"]
+    jobs = load_workflow("security.yaml")["jobs"]
     repository_steps = jobs["repository-security"]["steps"]
     image_steps = jobs["image-security"]["steps"]
 

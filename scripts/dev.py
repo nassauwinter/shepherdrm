@@ -110,6 +110,33 @@ def image_check() -> None:
     run(("python3", "scripts/verify_image.py", image))
 
 
+def release_check() -> None:
+    """Build one image and exercise its production deployment and recovery boundary."""
+    image = "shepherd-rm:acceptance"
+    revision = subprocess.run(
+        ("git", "rev-parse", "HEAD"),
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    run(
+        (
+            "docker",
+            "build",
+            "--build-arg",
+            "SHEPHERD_BUILD_VERSION=0.1.0",
+            "--build-arg",
+            f"SHEPHERD_BUILD_REVISION={revision}",
+            "--tag",
+            image,
+            ".",
+        )
+    )
+    run(("python3", "scripts/verify_image.py", image))
+    run(("python3", "scripts/verify_release_deployment.py", image))
+
+
 def clean() -> None:
     for relative_path in (
         ".pytest_cache",
@@ -138,6 +165,7 @@ TASKS: dict[str, Callable[[], None]] = {
     "migrate": migrate,
     "migration-check": migration_check,
     "image-check": image_check,
+    "release-check": release_check,
     "clean": clean,
 }
 

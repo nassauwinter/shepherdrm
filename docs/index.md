@@ -13,6 +13,7 @@ upgrading
 security-controls
 observability
 release-acceptance
+releasing
 resource-catalog
 resource-secrets
 manual-testing/index

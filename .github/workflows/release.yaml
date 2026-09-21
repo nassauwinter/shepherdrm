@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  attestations: write
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish verified release image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release
+
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - name: Derive and validate release identity
+        id: identity
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          package_version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          version_pattern="$(python3 -c 'import re, sys; identifier = "(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"; print(f"{re.escape(sys.argv[1])}(-{identifier}(\\.{identifier})*)?")' "$package_version")"
+          if [[ ! "$version" =~ ^$version_pattern$ ]]; then
+            echo "Tag $GITHUB_REF_NAME must equal v$package_version or use a valid SemVer prerelease suffix" >&2
+            exit 1
+          fi
+          git fetch origin main --depth=1
+          test "$(git rev-parse origin/main)" = "$GITHUB_SHA"
+          test -n "$DOCKERHUB_USERNAME"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+          printf 'image=%s\n' "$DOCKERHUB_USERNAME/shepherdrm" >> "$GITHUB_OUTPUT"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Log in to Docker Hub
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build and publish immutable image
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          build-args: |
+            SHEPHERD_BUILD_VERSION=${{ steps.identity.outputs.version }}
+            SHEPHERD_BUILD_REVISION=${{ github.sha }}
+          tags: |
+            ${{ steps.identity.outputs.image }}:${{ steps.identity.outputs.version }}
+            ${{ steps.identity.outputs.image }}:sha-${{ github.sha }}
+      - name: Set immutable image reference
+        id: image
+        run: >-
+          printf 'reference=%s@%s\n'
+          '${{ steps.identity.outputs.image }}'
+          '${{ steps.build.outputs.digest }}' >> "$GITHUB_OUTPUT"
+      - name: Pull published image by digest
+        run: docker pull '${{ steps.image.outputs.reference }}'
+      - name: Verify published runtime boundary
+        run: >-
+          python3 scripts/verify_image.py
+          --expected-version '${{ steps.identity.outputs.version }}'
+          '${{ steps.image.outputs.reference }}'
+      - name: Exercise published deployment and recovery
+        run: >-
+          python3 scripts/verify_release_deployment.py
+          '${{ steps.image.outputs.reference }}'
+      - name: Scan published image vulnerabilities and secrets
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.reference }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: "true"
+          severity: HIGH,CRITICAL
+          scanners: vuln,secret
+      - name: Attest published image provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-name: ${{ steps.identity.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Generate published-image SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ${{ steps.image.outputs.reference }}
+          format: spdx-json
+          output-file: shepherdrm-${{ steps.identity.outputs.version }}.spdx.json
+          upload-artifact: "false"
+          upload-release-assets: "false"
+      - name: Prepare release notes
+        env:
+          IMAGE: ${{ steps.image.outputs.reference }}
+          VERSION: ${{ steps.identity.outputs.version }}
+        run: |
+          set -euo pipefail
+          sbom="shepherdrm-${VERSION}.spdx.json"
+          checksum="$(sha256sum "$sbom" | awk '{print $1}')"
+          cat > release-notes.md <<EOF
+          ## Shepherd RM ${VERSION}
+
+          Container image: \`${IMAGE}\`
+
+          Platform: \`linux/amd64\`. The published digest was pulled and passed the runtime-boundary, production deployment/recovery, and final vulnerability/secret scan gates before this release was created.
+
+          This release includes an SPDX JSON SBOM. Its SHA-256 checksum is \`${checksum}\`.
+
+          Limitations: only the documented \`linux/amd64\` image is published. Upgrade and rollback procedures are in [the deployment documentation](https://github.com/nassauwinter/shepherdrm/blob/${GITHUB_SHA}/docs/upgrading.md). No other downloadable release assets are published.
+          EOF
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          body_path: release-notes.md
+          files: shepherdrm-${{ steps.identity.outputs.version }}.spdx.json
+          prerelease: ${{ contains(steps.identity.outputs.version, '-') }}

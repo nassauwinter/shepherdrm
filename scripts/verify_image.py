@@ -26,7 +26,7 @@ def contract_manifest(root: Path) -> dict[str, str]:
     }
 
 
-def verify_image(image: str) -> None:
+def verify_image(image: str, expected_version: str = "0.1.0") -> None:
     """Assert runtime identity, package exclusions, and local-file exclusions."""
     configured_user = run("docker", "image", "inspect", "--format", "{{.Config.User}}", image)
     if configured_user != "shepherd":
@@ -47,8 +47,8 @@ def verify_image(image: str) -> None:
         '{{index .Config.Labels "org.opencontainers.image.revision"}}',
         image,
     )
-    if version != "0.1.0":
-        raise RuntimeError(f"Image version label is {version!r}, expected '0.1.0'")
+    if version != expected_version:
+        raise RuntimeError(f"Image version label is {version!r}, expected {expected_version!r}")
     if revision == "unknown" or len(revision) < 7:
         raise RuntimeError("Image revision label must identify the source commit")
 
@@ -97,9 +97,14 @@ print(json.dumps({
 def main() -> None:
     """Parse the image reference and run the release-runtime assertions."""
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--expected-version",
+        default="0.1.0",
+        help="expected org.opencontainers.image.version label",
+    )
     parser.add_argument("image", nargs="?", default="shepherd-rm:check")
     arguments = parser.parse_args()
-    verify_image(arguments.image)
+    verify_image(arguments.image, arguments.expected_version)
 
 
 if __name__ == "__main__":

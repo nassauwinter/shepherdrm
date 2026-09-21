@@ -20,7 +20,9 @@ def load_workflow(name: str) -> dict[str, Any]:
 
 def test_all_ci_actions_are_pinned_to_commit_shas() -> None:
     """Every external action reference uses an immutable 40-character commit SHA."""
-    workflows = [load_workflow("ci.yaml"), load_workflow("security.yaml")]
+    workflows = [
+        load_workflow(workflow_path.name) for workflow_path in WORKFLOWS_DIRECTORY.glob("*.yaml")
+    ]
     action_references = [
         step["uses"]
         for workflow in workflows

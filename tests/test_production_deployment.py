@@ -45,3 +45,15 @@ def test_production_api_uses_readiness_and_file_backed_keys() -> None:
     assert "secret_encryption_keys" in api["secrets"]
     assert api["cap_drop"] == ["ALL"]
     assert api["security_opt"] == ["no-new-privileges:true"]
+
+
+def test_api_and_worker_share_only_bounded_runtime_metrics_state() -> None:
+    """The API can scrape atomic worker signals without a database heartbeat table."""
+    services = load_compose()["services"]
+    expected_path = "/var/lib/shepherd-rm/worker-metrics.json"
+    expected_volume = "shepherd_runtime_state:/var/lib/shepherd-rm"
+
+    for service_name in ("shepherd-rm", "worker"):
+        service = services[service_name]
+        assert service["environment"]["SHEPHERD_WORKER_METRICS_PATH"] == expected_path
+        assert service["volumes"] == [expected_volume]

@@ -270,6 +270,11 @@ class Lease(Base):
         Index(
             "ix_leases_resource_active", "resource_id", postgresql_where=text("ended_at IS NULL")
         ),
+        Index(
+            "ix_leases_active_expiration",
+            "expires_at",
+            postgresql_where=text("ended_at IS NULL AND expires_at IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)

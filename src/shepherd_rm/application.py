@@ -8,10 +8,11 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
+from fastapi.security import HTTPAuthorizationCredentials
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
 
@@ -20,9 +21,17 @@ from shepherd_rm.config import Settings, get_settings
 from shepherd_rm.contract import load_openapi_contract
 from shepherd_rm.database import check_database
 from shepherd_rm.identity.api import build_identity_router
+from shepherd_rm.identity.api.dependencies import BEARER, IdentityDependencies
+from shepherd_rm.identity.authentication import AuthenticatedPrincipal
 from shepherd_rm.leasing import build_leasing_router
 from shepherd_rm.logging import configure_logging
 from shepherd_rm.models import HealthResponse, Problem, ReadinessResponse
+from shepherd_rm.observability import (
+    collect_database_metrics,
+    load_worker_metrics,
+    record_http_request,
+    render_metrics,
+)
 from shepherd_rm.request_context import (
     reset_correlation_id,
     select_correlation_id,
@@ -62,11 +71,27 @@ def create_app(
     app.include_router(build_catalog_router(current_settings))
     app.include_router(build_leasing_router(current_settings))
     app.include_router(build_resource_secrets_router(current_settings))
+    identity_dependencies = IdentityDependencies(current_settings)
 
     async def default_readiness_check() -> None:
         await check_database(current_settings)
 
     check_readiness = readiness_check or default_readiness_check
+
+    async def metrics_administrator(
+        credentials: HTTPAuthorizationCredentials | None = Depends(BEARER),
+    ) -> AuthenticatedPrincipal:
+        """Authenticate a metrics scrape while mapping database outages to 503."""
+        try:
+            return await identity_dependencies.administrator(credentials)
+        except HTTPException:
+            raise
+        except Exception:
+            LOGGER.warning("metrics authentication unavailable")
+            raise HTTPException(
+                status_code=503,
+                detail="Metrics are unavailable because PostgreSQL cannot be queried",
+            ) from None
 
     @app.exception_handler(HTTPException)
     async def http_problem(request: Request, error: HTTPException) -> JSONResponse:
@@ -111,7 +136,24 @@ def create_app(
         request.state.correlation_id = correlation_id
         context_token = set_correlation_id(correlation_id)
         try:
-            response = await call_next(request)
+            try:
+                response = await call_next(request)
+            except Exception:
+                route = request.scope.get("route")
+                logged_path = route.path_format if isinstance(route, APIRoute) else "<unmatched>"
+                duration_seconds = time.perf_counter() - started_at
+                record_http_request(request.method, logged_path, 500, duration_seconds)
+                LOGGER.error(
+                    "request failed",
+                    extra={
+                        "correlation_id": correlation_id,
+                        "method": request.method,
+                        "path": logged_path,
+                        "status_code": 500,
+                        "duration_ms": round(duration_seconds * 1000, 3),
+                    },
+                )
+                raise
         finally:
             reset_correlation_id(context_token)
         response.headers["x-correlation-id"] = correlation_id
@@ -120,6 +162,8 @@ def create_app(
             response.headers["Pragma"] = "no-cache"
         route = request.scope.get("route")
         logged_path = route.path_format if isinstance(route, APIRoute) else "<unmatched>"
+        duration_seconds = time.perf_counter() - started_at
+        record_http_request(request.method, logged_path, response.status_code, duration_seconds)
         LOGGER.info(
             "request completed",
             extra={
@@ -127,7 +171,7 @@ def create_app(
                 "method": request.method,
                 "path": logged_path,
                 "status_code": response.status_code,
-                "duration_ms": round((time.perf_counter() - started_at) * 1000, 3),
+                "duration_ms": round(duration_seconds * 1000, 3),
             },
         )
         return response
@@ -174,5 +218,31 @@ def create_app(
                 media_type="application/problem+json",
             )
         return ReadinessResponse()
+
+    @app.get(
+        "/metrics",
+        operation_id="getMetrics",
+        response_class=Response,
+        responses={401: {"model": Problem}, 403: {"model": Problem}, 503: {"model": Problem}},
+        tags=["Operations"],
+    )
+    async def get_metrics(
+        _admin: AuthenticatedPrincipal = Depends(metrics_administrator),
+    ) -> Response:
+        try:
+            snapshot = await collect_database_metrics(current_settings)
+        except Exception:
+            LOGGER.warning("metrics collection failed")
+            raise HTTPException(
+                status_code=503,
+                detail="Metrics are unavailable because PostgreSQL cannot be queried",
+            ) from None
+        return Response(
+            content=render_metrics(
+                snapshot,
+                load_worker_metrics(current_settings.worker_metrics_path),
+            ),
+            headers={"Content-Type": "text/plain; version=1.0.0; charset=utf-8"},
+        )
 
     return app

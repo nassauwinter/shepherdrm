@@ -91,6 +91,7 @@ the operator's control.
 | `SHEPHERD_SECRET_ACCESS_RATE_LIMIT_WINDOW_SECONDS` | `60` | Secret-access window in seconds. |
 | `SHEPHERD_LEASE_EXPIRATION_POLL_SECONDS` | `1` | Worker polling interval; must be positive. |
 | `SHEPHERD_LEASE_EXPIRATION_BATCH_SIZE` | `100` | Worker batch size from `1` through `1000`. |
+| `SHEPHERD_WORKER_METRICS_PATH` | Unset | API and worker must share this atomic state file. Production Compose configures a private runtime volume. |
 | `SHEPHERD_SECRET_ENCRYPTION_ACTIVE_KEY_ID` | Unset | Required for managed-secret writes. This identifier is not secret. |
 | `SHEPHERD_SECRET_ENCRYPTION_KEYS_FILE` | Unset | Preferred JSON key-ring source. The direct setting takes precedence when both forms are configured. |
 | `SHEPHERD_SECRET_ENCRYPTION_KEYS` | `{}` | Direct JSON fallback for other orchestrators; avoid environment storage when file mounts are available. |
@@ -102,6 +103,11 @@ the operator's control.
 not the Shepherd RM process. The example defaults are safe only when the API
 remains behind the documented network boundary. The development database URL and
 development Compose password are unsafe for production.
+
+The `shepherd_runtime_state` volume contains only bounded worker counters,
+timestamps, and the image revision. It contains no resource, principal, or secret
+data and is not part of backup or restore. Removing it resets worker counters;
+Prometheus must tolerate counter resets.
 
 ## Network and TLS
 
@@ -118,11 +124,11 @@ headers beyond what the selected proxy requires. Replace inbound
 `X-Correlation-ID` values that do not meet Shepherd RM's documented safe format;
 the application also validates them before logging.
 
-The unversioned `/health` and `/ready` routes share the API listener, and the
-planned `/metrics` route will use that listener as well. Keep the listener on an
-operator-controlled network. Liveness may be used by the local orchestrator;
-readiness must not be exposed publicly. `/metrics` will also require an
-authenticated administrator when the initial metrics slice is implemented.
+The unversioned `/health`, `/ready`, and `/metrics` routes share the API listener.
+Keep the listener on an operator-controlled network. Liveness may be used by the
+local orchestrator; readiness must not be exposed publicly. Metrics also require
+an authenticated administrator. See the [observability guide](observability.md)
+for scrape credentials, metric definitions, and alert guidance.
 
 ## Application security limits
 

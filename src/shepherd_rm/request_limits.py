@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections import deque
 
 from starlette.datastructures import Headers
@@ -10,6 +11,7 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from shepherd_rm.models import Problem
+from shepherd_rm.observability import record_http_request
 from shepherd_rm.request_context import select_correlation_id
 
 LOGGER = logging.getLogger(__name__)
@@ -28,10 +30,11 @@ class RequestBodyLimitMiddleware:
             return
 
         headers = Headers(scope=scope)
+        started_at = time.perf_counter()
         correlation_id = select_correlation_id(headers.get("x-correlation-id"))
         content_length = self._content_length(headers.get("content-length"))
         if content_length is not None and content_length > self.max_body_bytes:
-            await self._reject(scope, receive, send, correlation_id)
+            await self._reject(scope, receive, send, correlation_id, started_at)
             return
 
         received_bytes = 0
@@ -42,7 +45,7 @@ class RequestBodyLimitMiddleware:
             if message["type"] == "http.request":
                 received_bytes += len(message.get("body", b""))
                 if received_bytes > self.max_body_bytes:
-                    await self._reject(scope, receive, send, correlation_id)
+                    await self._reject(scope, receive, send, correlation_id, started_at)
                     return
                 if not message.get("more_body", False):
                     break
@@ -71,6 +74,7 @@ class RequestBodyLimitMiddleware:
         receive: Receive,
         send: Send,
         correlation_id: str,
+        started_at: float,
     ) -> None:
         problem = Problem(
             title="Payload too large",
@@ -92,5 +96,11 @@ class RequestBodyLimitMiddleware:
                 "path": "<unrouted>",
                 "status_code": 413,
             },
+        )
+        record_http_request(
+            str(scope.get("method", "OTHER")),
+            "<unrouted>",
+            413,
+            time.perf_counter() - started_at,
         )
         await response(scope, receive, send)

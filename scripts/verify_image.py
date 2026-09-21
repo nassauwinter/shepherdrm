@@ -17,6 +17,26 @@ def verify_image(image: str) -> None:
     configured_user = run("docker", "image", "inspect", "--format", "{{.Config.User}}", image)
     if configured_user != "shepherd":
         raise RuntimeError(f"Image user is {configured_user!r}, expected 'shepherd'")
+    version = run(
+        "docker",
+        "image",
+        "inspect",
+        "--format",
+        '{{index .Config.Labels "org.opencontainers.image.version"}}',
+        image,
+    )
+    revision = run(
+        "docker",
+        "image",
+        "inspect",
+        "--format",
+        '{{index .Config.Labels "org.opencontainers.image.revision"}}',
+        image,
+    )
+    if version != "0.1.0":
+        raise RuntimeError(f"Image version label is {version!r}, expected '0.1.0'")
+    if revision == "unknown" or len(revision) < 7:
+        raise RuntimeError("Image revision label must identify the source commit")
 
     runtime_check = """
 import importlib.util
@@ -25,6 +45,9 @@ import pathlib
 import shutil
 
 assert os.getuid() == 10001
+state_directory = pathlib.Path('/var/lib/shepherd-rm')
+assert state_directory.is_dir()
+assert os.access(state_directory, os.W_OK)
 for package in ('mypy', 'pytest', 'ruff', 'sphinx'):
     assert importlib.util.find_spec(package) is None, package
 for command in ('uv', 'uvx'):

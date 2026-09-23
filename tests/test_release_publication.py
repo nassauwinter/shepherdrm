@@ -29,10 +29,16 @@ def test_release_is_tag_driven_and_environment_protected() -> None:
         "id-token": "write",
     }
     identity_step = next(step for step in job["steps"] if step.get("id") == "identity")
+    login_step = next(
+        step for step in job["steps"] if "docker/login-action@" in step.get("uses", "")
+    )
     assert "version_pattern=" in identity_step["run"]
     assert '[[ ! "$version" =~ ^$version_pattern$ ]]' in identity_step["run"]
+    assert '"docker.io/$DOCKERHUB_USERNAME/shepherdrm"' in identity_step["run"]
+    assert '"index.docker.io/$DOCKERHUB_USERNAME/shepherdrm"' in identity_step["run"]
     assert "git fetch origin main --depth=1" in identity_step["run"]
     assert "git rev-parse origin/main" in identity_step["run"]
+    assert login_step["with"]["registry"] == "docker.io"
 
 
 def test_release_verifies_and_records_the_published_digest_before_release() -> None:
@@ -59,6 +65,9 @@ def test_release_verifies_and_records_the_published_digest_before_release() -> N
     assert "SHEPHERD_BUILD_REVISION=${{ github.sha }}" in build_step["with"]["build-args"]
     assert scan_step["with"]["image-ref"] == "${{ steps.image.outputs.reference }}"
     assert scan_step["with"]["severity"] == "HIGH,CRITICAL"
+    assert (
+        provenance_step["with"]["subject-name"] == "${{ steps.identity.outputs.attestation_image }}"
+    )
     assert provenance_step["with"]["subject-digest"] == "${{ steps.build.outputs.digest }}"
     assert provenance_step["with"]["push-to-registry"] is True
     assert "actions/attest-build-provenance@" in uses

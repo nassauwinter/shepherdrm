@@ -29,10 +29,15 @@ def test_release_is_tag_driven_and_environment_protected() -> None:
         "id-token": "write",
     }
     identity_step = next(step for step in job["steps"] if step.get("id") == "identity")
+    login_step = next(
+        step for step in job["steps"] if "docker/login-action@" in step.get("uses", "")
+    )
     assert "version_pattern=" in identity_step["run"]
     assert '[[ ! "$version" =~ ^$version_pattern$ ]]' in identity_step["run"]
+    assert '"docker.io/$DOCKERHUB_USERNAME/shepherdrm"' in identity_step["run"]
     assert "git fetch origin main --depth=1" in identity_step["run"]
     assert "git rev-parse origin/main" in identity_step["run"]
+    assert login_step["with"]["registry"] == "docker.io"
 
 
 def test_release_verifies_and_records_the_published_digest_before_release() -> None:
